@@ -164,7 +164,7 @@ export class gameObject extends EventTarget
             data[key] = value();
         }
         action.send(data);
-        
+
         console.log("Sent: ", data);
     }
     setPos(vector3)
@@ -320,9 +320,6 @@ export class player extends gameObject
         args.handler.gameState.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
-
-        this.addSendingData("position", () => { return this.getPos(); });
-        this.addSendingData("rotation", () => { return this.mesh.rotation; });
     }
     becomeLocalPlayer()
     {
@@ -334,6 +331,8 @@ export class player extends gameObject
             this.mesh.rotateZ(-e.deltaCoord.x * 2);
             this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
         });
+        this.addSendingData("position", () => { return this.getPos(); });
+        this.addSendingData("rotation", () => { return this.mesh.rotation; });
     }
     tick(dt, time)
     {
