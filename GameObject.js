@@ -119,6 +119,13 @@ export class handler
         }
         this.unshiftGameObjects = [];
     }
+    send(action)
+    {
+        for(const go of this.gameObjects)
+        {
+            go.send(action);
+        }
+    }
 }
 
 //abstract base class, should never be created
@@ -127,6 +134,7 @@ export class gameObject extends EventTarget
     handler = null;
     pos = new THREE.Vector3();
     tags = [];
+    sendingData = {};
     constructor(mesh = null)
     {
         super();
@@ -146,6 +154,18 @@ export class gameObject extends EventTarget
             if(!!uTime)
                 uTime.value = time;
         });
+    }
+    addSendingData(name, getter) { this.sendingData[name] = getter; }
+    send(action)
+    {
+        let data = {};
+        for(const [key, value] of Object.entries(this.sendingData))
+        {
+            data[key] = value();
+        }
+        action.send(data);
+        
+        console.log("Sent: ", data);
     }
     setPos(vector3)
     {
@@ -272,14 +292,9 @@ export class gameState
     players = {};
     localPlayerId = -1;
     constructor(){}
-    addPlayer(obj, id)
-    {
-        this.players[id] = obj;
-    }
-    removePlayer(id)
-    {
-        delete this.players[id];
-    }
+    addPlayer(obj, id) { this.players[id] = obj; }
+    removePlayer(id) { delete this.players[id]; }
+    getPlayer(id) { return this.players[id]; }
     setLocalPlayer(id)
     {
         this.localPlayerId = id;
@@ -305,6 +320,9 @@ export class player extends gameObject
         args.handler.gameState.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
+
+        this.addSendingData("position", () => { return this.getPos(); });
+        this.addSendingData("rotation", () => { return this.mesh.rotation; });
     }
     becomeLocalPlayer()
     {

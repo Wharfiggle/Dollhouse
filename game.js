@@ -83,7 +83,15 @@ function loadGame()
     };
     room.onPeerLeave = (peerId) => {
         console.log("Player disconnected: " + peerId);
+        handler.removeGameObject(gameState.getPlayer(peerId));
         gameState.removePlayer(peerId);
+    };
+    const playerUpdate = room.makeAction("playerUpdate");
+    playerUpdate.onMessage = (data, { peerId }) => {
+        console.log("Received playerUpdate: ", peerId, data);
+        const player = gameState.getPlayer(peerId);
+        if(!!data.position) player.setPos(data.position);
+        if(!!data.rotation) player.mesh.rotation.copy(data.rotation);
     }
 
 
@@ -94,16 +102,14 @@ function loadGame()
 
     //tick
     let lastTime = 0;
+    const sendInterval = 1 / 30; //send online information 30 times per second
+    let sendTimer = 0;
     function tick(t = 0)
     {
         requestAnimationFrame(tick);
         let dt = (t - lastTime) / 1000;
         lastTime = t;
         let time = t / 1000;
-
-        //dont process this frame if it's is after a large accumulation of skipped frames
-        if(dt > 1.0)
-            return;
 
         if(dpr != window.devicePixelRatio)
             handleWindowResize();
@@ -119,6 +125,10 @@ function loadGame()
         ghostUi.restore();
         ghostUi.globalCompositeOperation = "source-over";
         
+        sendTimer += dt;
+        if(sendTimer >= sendInterval)
+            handler.send(playerUpdate);
+
         handler.tick(dt, time);
 
         renderer.render(scene, camera);
@@ -152,7 +162,7 @@ function loadGame()
         inputManager.updateScreenVars(w, h, dpr);
 
         document.dispatchEvent( new CustomEvent("windowResize"), { 
-            detail: { 
+            detail: {
                 newSize: new THREE.Vector2(w, h),
                 camera: camera
             } 
