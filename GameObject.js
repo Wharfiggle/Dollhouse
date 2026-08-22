@@ -349,11 +349,11 @@ export class player extends gameObject
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
         this.addSendingData("position", () => { return this.getPos(); }, (data) => {
-            this.setPos(lerp(data.start, data.target, 0.5));
+            this.setPos(lerp(this.getPos(), data.target, dt));
             return this.getPos().sub(data.target).length < 0.1;
         });
         this.addSendingData("rotation", () => { return this.mesh.rotation; }, (data) => {
-            this.mesh.rotation.set(lerp(data.start, data.target, 0.5));
+            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, dt));
             return this.mesh.rotation.clone().sub(data.target).length < 0.1;
         });
     }
