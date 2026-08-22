@@ -87,8 +87,7 @@ function loadGame()
         gameState.removePlayer(peerId);
     };
     const playerUpdate = room.makeAction("playerUpdate");
-    playerUpdate.onMessage = (data, { peerId }) => {
-        console.log("Received playerUpdate: ", peerId, data);
+    playerUpdate.onMessage = (data, { peerId }) => { 
         const player = gameState.getPlayer(peerId);
         if(!!data.position) player.receiveCatchUpData("position", data.position)
         if(!!data.rotation) player.receiveCatchUpData("rotation", data.rotation);

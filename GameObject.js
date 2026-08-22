@@ -14,6 +14,8 @@ function lerp(vec1, vec2, t)
     return a.add( b.sub(a).multiplyScalar(t) );
 }
 
+function trimVector3(vec3) { return { x: vec3.x, y: vec3.y, z: vec3.z }; }
+
 function worldToScreen(vector3, camera, screenWidth, screenHeight)
 {
     const screenPos = vector3.clone().project(camera);
@@ -24,6 +26,7 @@ export class handler
 {
     gameObjects = [];
     localGameObjects = [];
+    nonLocalGameObjects = [];
     removeGameObjects = [];
     unshiftGameObjects = []; //used for adding gameObjects to the start of the list, useful for affecting draw order for ui
     tagGroups = {};
@@ -68,21 +71,22 @@ export class handler
         else
             return [];
     }
-    newGameObject(gameObjClass, args = {}, isLocal = true, under = false)
+    newGameObject(gameObjClass, args = {}, under = false)
     {
         const gameObj = new gameObjClass({ ...args, handler: this });
-        this.addGameObject(gameObj, isLocal, under);
+        this.addGameObject(gameObj, under);
         return gameObj;
     }
-    addGameObject(gameObj, isLocal = true, under = false)
+    addGameObject(gameObj, under = false)
     {
         gameObj.handler = this;
         gameObj.ui = this.ui;
         gameObj.ghostUi = this.ghostUi;
-        gameObj.isLocal = isLocal;
 
-        if(isLocal)
+        if(gameObj.isLocal)
             this.localGameObjects.push(gameObj);
+        else
+            this.nonLocalGameObjects.push(gameObj);
         
         if(gameObj.mesh)
             this.scene.add(gameObj.mesh);
@@ -104,6 +108,10 @@ export class handler
         for(const go of this.gameObjects)
         {
             go.tick(dt, time);
+        }
+        for(const go of this.nonLocalGameObjects)
+        {
+            go.catchUp(dt, time);
         }
 
         for(const rgo of this.removeGameObjects)
@@ -142,10 +150,11 @@ export class gameObject extends EventTarget
     isLocal = true;
     sendingData = {};
     catchUpData = {};
-    constructor(mesh = null)
+    constructor(mesh = null, isLocal = true)
     {
         super();
         this.mesh = mesh ? mesh.clone() : null;
+        this.isLocal = isLocal;
     }
     tick(dt, time)
     {
@@ -171,16 +180,24 @@ export class gameObject extends EventTarget
     {
         const cud = this.catchUpData[name];
         cud.caughtUp = false;
-        cud.target = target;
+        const x = Object.hasOwn(target, 'x');
+        const y = Object.hasOwn(target, 'y');
+        const z = Object.hasOwn(target, 'z');
+        if(x && y && z)
+            cud.target = new THREE.Vector3(target.x, target.y, target.z);
+        else if(x && y)
+            cud.target = new THREE.Vector2(target.x, target.y);
+        else
+            cud.target = target;
         cud.start = this.sendingData[name].getter();
     }
-    catchUp()
+    catchUp(dt, time)
     {
-        for(const [key, value] of this.catchUpData)
+        for(const [key, data] of Object.entries(this.catchUpData))
         {
-            if(value.caughtUp)
+            if(data.caughtUp)
                 continue;
-            value.caughtUp = value.catchUp(value);
+            data.caughtUp = data.catchUp({ ...data, dt, time });
         }
     }
     send(action)
@@ -338,8 +355,7 @@ export class player extends gameObject
     id = 0;
     constructor(args)
     {
-        super(args.handler.meshes.player);
-        this.isLocal = false;
+        super(args.handler.meshes.player, false);
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
@@ -349,18 +365,22 @@ export class player extends gameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData("position", () => { return this.getPos(); }, (data) => {
-            this.setPos(lerp(this.getPos(), data.target, dt));
+        this.addSendingData("position", () => trimVector3(this.getPos()), (data) => {
+            this.setPos(lerp(this.getPos(), data.target, data.dt));
             return this.getPos().sub(data.target).length < 0.1;
         });
-        this.addSendingData("rotation", () => { return this.mesh.rotation; }, (data) => {
-            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, dt));
+
+        this.addSendingData("rotation", () => {
+            const vec = this.mesh.rotation;
+            return { x: vec.x,  }; 
+        }, (data) => {
+            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, data.dt));
             return this.mesh.rotation.clone().sub(data.target).length < 0.1;
         });
     }
     becomeLocalPlayer()
     {
-        this.isLocalPlayer = true;
+        this.isLocal = true;
         this.cameraRoot.add(this.handler.camera);
         this.handler.camera.position.set(0, 0, 0);
         this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, 0)));
@@ -373,6 +393,7 @@ export class player extends gameObject
     {
         if(this.isLocal)
         {
+            console.log(this.isLocal);
             //calculate movement direction
             const moveInput = new THREE.Vector2();
             if(this.handler.inputManager.isHeld('w')) moveInput.y += 1;
@@ -394,10 +415,6 @@ export class player extends gameObject
 
                 this.setPos(pos.add(movement.multiplyScalar(this.speed * dt)));
             }
-        }
-        else
-        {
-            this.setPos();
         }
 
         //gravity
