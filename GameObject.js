@@ -15,6 +15,19 @@ function lerp(vec1, vec2, t)
 }
 
 function trimVector3(vec3) { return { x: vec3.x, y: vec3.y, z: vec3.z }; }
+function trimVector2(vec2) { return { x: vec2.x, y: vec2.y }; }
+function untrimData(data)
+{
+    const x = Object.hasOwn(data, 'x');
+    const y = Object.hasOwn(data, 'y');
+    const z = Object.hasOwn(data, 'z');
+    if(x && y && z)
+        return new THREE.Vector3(data.x, data.y, data.z);
+    else if(x && y)
+        return new THREE.Vector2(data.x, data.y);
+    
+    return data;
+}
 
 function worldToScreen(vector3, camera, screenWidth, screenHeight)
 {
@@ -190,16 +203,8 @@ export class gameObject extends EventTarget
     {
         const cud = this.catchUpData[name];
         cud.caughtUp = false;
-        const x = Object.hasOwn(target, 'x');
-        const y = Object.hasOwn(target, 'y');
-        const z = Object.hasOwn(target, 'z');
-        if(x && y && z)
-            cud.target = new THREE.Vector3(target.x, target.y, target.z);
-        else if(x && y)
-            cud.target = new THREE.Vector2(target.x, target.y);
-        else
-            cud.target = target;
-        cud.start = this.sendingData[name].getter();
+        cud.target = untrimData(target);
+        cud.start = untrimData(this.sendingData[name].getter());
     }
     catchUp(dt, time)
     {
@@ -377,14 +382,16 @@ export class player extends gameObject
 
         this.addSendingData("position", () => trimVector3(this.getPos()),
         (data, dt, time) => {
-            this.setPos(lerp(this.getPos(), data.target, dt));
+            this.setPos(lerp(this.getPos(), data.target, dt * 4));
             return this.getPos().sub(data.target).length < 0.1;
         });
 
         this.addSendingData("rotation", () => trimVector3(this.mesh.rotation), 
         (data, dt, time) => {
-            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, dt));
-            return this.mesh.rotation.clone().sub(data.target).length < 0.1;
+            const quat = new THREE.Quaternion();
+            quat.setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
+            this.mesh.quaternion.slerp(quat, dt * 4);
+            return this.mesh.quaternion == quat;
         });
     }
     becomeLocalPlayer()
