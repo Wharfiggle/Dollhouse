@@ -338,7 +338,8 @@ export class player extends gameObject
     id = 0;
     constructor(args)
     {
-        super(args.handler.meshes.player, args.isLocal ?? false);
+        super(args.handler.meshes.player);
+        this.isLocal = false;
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
