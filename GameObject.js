@@ -402,7 +402,7 @@ export class player extends gameObject
         this.mesh.add(this.cameraRoot);
         this.headMesh = args.handler.meshes.playerHead.clone();
         this.cameraRoot.add(this.headMesh);
-        this.headMesh.position.set(new THREE.Vector3(0, 4, 0));
+        //this.headMesh.position.set(new THREE.Vector3(0, 4, 0));
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
 
         this.id = args.id ?? 0;
@@ -438,8 +438,9 @@ export class player extends gameObject
         {
             this.cameraRoot.add(this.handler.camera);
             this.handler.camera.position.set(0, 0, 0);
-            this.handler.camera.rotation.set(0, 0, 0);
-            this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, 1, this.height)));
+            this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
+            this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, -1, this.height * 1.5)));
+            this.cameraRoot.remove(this.headMesh);
 
             this.handler.inputManager.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
@@ -469,7 +470,7 @@ export class player extends gameObject
                 const pos = this.getPos();
                 const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
                 forwardVector.applyQuaternion(this.mesh.quaternion);
-                const ang = Math.atan2(moveInput.y, moveInput.x) + Math.PI / 2;
+                const ang = Math.atan2(moveInput.y, moveInput.x) - Math.PI / 2;
                 //rotate forwardVector by angle of moveInput to get movement direction
                 const movement = new THREE.Vector3(
                     Math.cos(ang) * forwardVector.x - Math.sin(ang) * forwardVector.y,
