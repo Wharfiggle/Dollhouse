@@ -89,8 +89,11 @@ function loadGame()
     const playerUpdate = room.makeAction("playerUpdate");
     playerUpdate.onMessage = (data, { peerId }) => { 
         const player = gameState.getPlayer(peerId);
-        if(!!data.position) player.receiveCatchUpData("position", data.position);
-        if(!!data.rotation) player.receiveCatchUpData("rotation", data.rotation);
+        for(const [key, value] of Object.entries(data))
+        {
+            player.receiveCatchUpData(key, value);
+            console.log(key, value);
+        }
     }
 
 
