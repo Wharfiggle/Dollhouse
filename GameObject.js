@@ -402,7 +402,6 @@ export class player extends gameObject
         this.mesh.add(this.cameraRoot);
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
         this.headMesh = args.handler.meshes.playerHead.clone();
-        this.headMesh.rotateX(Math.PI / 2);
         this.cameraRoot.add(this.headMesh);
 
         this.id = args.id ?? 0;
@@ -424,11 +423,7 @@ export class player extends gameObject
             return this.mesh.quaternion == quat;
         });
 
-        this.addSendingData("headRotation", () => {
-            const euler = new THREE.Euler();
-            euler.setFromQuaternion(this.cameraRoot.getWorldQuaternion(new THREE.Quaternion()));
-            return trimVector3(euler);
-        },
+        this.addSendingData("headRotation", () => trimVector3(this.cameraRoot.rotation),
         (data, dt, time) => {
             const quat = new THREE.Quaternion();
             quat.setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
