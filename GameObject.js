@@ -23,6 +23,7 @@ function worldToScreen(vector3, camera, screenWidth, screenHeight)
 export class handler
 {
     gameObjects = [];
+    localGameObjects = [];
     removeGameObjects = [];
     unshiftGameObjects = []; //used for adding gameObjects to the start of the list, useful for affecting draw order for ui
     tagGroups = {};
@@ -67,17 +68,21 @@ export class handler
         else
             return [];
     }
-    newGameObject(gameObjClass, args = {}, under = false)
+    newGameObject(gameObjClass, args = {}, isLocal = true, under = false)
     {
         const gameObj = new gameObjClass({ ...args, handler: this });
-        this.addGameObject(gameObj, under);
+        this.addGameObject(gameObj, isLocal, under);
         return gameObj;
     }
-    addGameObject(gameObj, under = false)
+    addGameObject(gameObj, isLocal = true, under = false)
     {
         gameObj.handler = this;
         gameObj.ui = this.ui;
         gameObj.ghostUi = this.ghostUi;
+        gameObj.isLocal = isLocal;
+
+        if(isLocal)
+            this.localGameObjects.push(gameObj);
         
         if(gameObj.mesh)
             this.scene.add(gameObj.mesh);
@@ -121,7 +126,7 @@ export class handler
     }
     send(action)
     {
-        for(const go of this.gameObjects)
+        for(const go of this.localGameObjects)
         {
             go.send(action);
         }
@@ -134,7 +139,9 @@ export class gameObject extends EventTarget
     handler = null;
     pos = new THREE.Vector3();
     tags = [];
+    isLocal = true;
     sendingData = {};
+    catchUpData = {};
     constructor(mesh = null)
     {
         super();
@@ -155,17 +162,38 @@ export class gameObject extends EventTarget
                 uTime.value = time;
         });
     }
-    addSendingData(name, getter) { this.sendingData[name] = getter; }
+    addSendingData(name, getter, catchUp)
+    {
+        this.sendingData[name] = { getter: getter };
+        this.catchUpData[name] = { catchUp: catchUp, caughtUp: true, target: null, start: null };
+    }
+    receiveCatchUpData(name, target)
+    {
+        const cud = this.catchUpData[name];
+        cud.caughtUp = false;
+        cud.target = target;
+        cud.start = this.sendingData[name].getter();
+    }
+    catchUp()
+    {
+        for(const [key, value] of this.catchUpData)
+        {
+            if(value.caughtUp)
+                continue;
+            value.caughtUp = value.catchUp(value);
+        }
+    }
     send(action)
     {
+        if(!this.isLocal)
+            return;
+
         let data = {};
         for(const [key, value] of Object.entries(this.sendingData))
         {
-            data[key] = value();
+            data[key] = value.getter();
         }
         action.send(data);
-
-        console.log("Sent: ", data);
     }
     setPos(vector3)
     {
@@ -308,10 +336,9 @@ export class player extends gameObject
     height = 0;
     speed = 3;
     id = 0;
-    isLocalPlayer = false;
     constructor(args)
     {
-        super(args.handler.meshes.player);
+        super(args.handler.meshes.player, args.isLocal ?? false);
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
@@ -320,6 +347,15 @@ export class player extends gameObject
         args.handler.gameState.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
+
+        this.addSendingData("position", () => { return this.getPos(); }, (data) => {
+            this.setPos(lerp(data.start, data.target, 0.5));
+            return this.getPos().sub(data.target).length < 0.1;
+        });
+        this.addSendingData("rotation", () => { return this.mesh.rotation; }, (data) => {
+            this.mesh.rotation.set(lerp(data.start, data.target, 0.5));
+            return this.mesh.rotation.clone().sub(data.target).length < 0.1;
+        });
     }
     becomeLocalPlayer()
     {
@@ -331,12 +367,10 @@ export class player extends gameObject
             this.mesh.rotateZ(-e.deltaCoord.x * 2);
             this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
         });
-        this.addSendingData("position", () => { return this.getPos(); });
-        this.addSendingData("rotation", () => { return this.mesh.rotation; });
     }
     tick(dt, time)
     {
-        if(this.isLocalPlayer)
+        if(this.isLocal)
         {
             //calculate movement direction
             const moveInput = new THREE.Vector2();
@@ -359,6 +393,10 @@ export class player extends gameObject
 
                 this.setPos(pos.add(movement.multiplyScalar(this.speed * dt)));
             }
+        }
+        else
+        {
+            this.setPos();
         }
 
         //gravity
