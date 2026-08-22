@@ -92,7 +92,6 @@ function loadGame()
         for(const [key, value] of Object.entries(data))
         {
             player.receiveCatchUpData(key, value);
-            console.log(key, value);
         }
     }
 

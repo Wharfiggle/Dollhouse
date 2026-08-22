@@ -400,9 +400,10 @@ export class player extends gameObject
         
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
-        this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
         this.headMesh = args.handler.meshes.playerHead.clone();
+        this.headMesh.rotateX(-Math.PI / 4);
         this.cameraRoot.add(this.headMesh);
+        this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
 
         this.id = args.id ?? 0;
         args.handler.gameState.addPlayer(this, this.id);
@@ -437,8 +438,8 @@ export class player extends gameObject
         {
             this.cameraRoot.add(this.handler.camera);
             this.handler.camera.position.set(0, 0, 0);
-            this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, 0)));
-            //this.cameraRoot.remove(this.headMesh);
+            this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, this.height)));
+            this.cameraRoot.remove(this.headMesh);
 
             this.handler.inputManager.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
