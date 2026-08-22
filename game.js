@@ -68,8 +68,8 @@ function loadGame()
 
 
     //game objects
-    handler.newGameObject(GameObject.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10) });
-    handler.gameState.setLocalPlayer(0);
+    handler.newGameObject(GameObject.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
+    handler.gameState.setControlledPlayer(0);
     
     handler.newGameObject(GameObject.ground);
 
@@ -78,7 +78,7 @@ function loadGame()
     const room = joinRoom({ appId: "dollhouse" }, "test-room");
     room.onPeerJoin = (peerId) => {
         console.log("Player joined room: " + peerId);
-        const newPlayer = handler.newGameObject(GameObject.player, { id: peerId, startPos: new THREE.Vector3(0, 0, 10)});
+        const newPlayer = handler.newGameObject(GameObject.player, { id: peerId, isLocal: false, startPos: new THREE.Vector3(0, 0, 10)});
         gameState.addPlayer(newPlayer, peerId);
     };
     room.onPeerLeave = (peerId) => {

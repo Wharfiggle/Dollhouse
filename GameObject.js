@@ -262,7 +262,7 @@ export class inputManager
     dpr = 1;
     held = [];
     buttonSubscribers = {};
-    cursorMoveSubscribers = [];
+    cursorMoveSubscribers = {};
     constructor(w, h, dpr)
     {
         this.w = w;
@@ -304,9 +304,9 @@ export class inputManager
     {
         const key = event.key.toLowerCase();
         const entry = this.buttonSubscribers[key] ?? [[],[]];
-        for(const callback of entry[released ? 1 : 0])
+        for(const sub of entry[released ? 1 : 0])
         {
-            callback();
+            sub.callback();
         }
         if(!released && !this.held.includes(key))
             this.held.push(key);
@@ -325,19 +325,41 @@ export class inputManager
         );
         const deltaCoord = new THREE.Vector2(deltaPos.x / this.w, deltaPos.y / this.h);
 
-        for(const callback of this.cursorMoveSubscribers ?? [])
+        for(const [key, sub] of Object.entries(this.cursorMoveSubscribers))
         {
-            callback({ pos: pos, deltaPos: deltaPos, coord: coord, deltaCoord: deltaCoord });
+            sub.callback({ pos: pos, deltaPos: deltaPos, coord: coord, deltaCoord: deltaCoord });
         }
     }
-    subscribeToButton(inputStr, released, callback)
+    subscribeToButton(gameObj, inputStr, released, callback)
     {
         const str = inputStr.toLowerCase();
         //if inputStr doesnt exist in subscribers then initialize as array with an empty array for pressed and released before pushing to the respective array
         const entry = this.buttonSubscribers[str] ??= [[],[]];
-        entry[released ? 1 : 0].push(callback);
+        entry[released ? 1 : 0].push({ gameObj: gameObj, callback: callback });
     }
-    subscribeToCursorMove(callback) { this.cursorMoveSubscribers.push(callback); }
+    subscribeToCursorMove(gameObj, callback) { this.cursorMoveSubscribers[gameObj] = { callback: callback }; }
+    unsubscribeFromCursorMove(gameObj) { delete this.cursorMoveSubscribers[gameObj]; }
+    unsubscribeFromButton(inputStr, released, gameObj)
+    {
+        const str = inputStr.toLowerCase();
+        const arr = this.buttonSubscribers[str][released ? 1 : 0];
+        this.buttonSubscribers[str][released ? 1 : 0] = arr.filter(e => e.gameObj != gameObj);
+    }
+    unsubscribeFromAllButtons(gameObj)
+    {
+        for(const [key, value] of Object.entries(this.buttonSubscribers))
+        {
+            for(let i = 0; i < 1; i++)
+            {
+                value[i] = value[i].filter(e => e.gameObj != gameObj);
+            }
+        }
+    }
+    unsubscribeFromAllInput(gameObj)
+    {
+        this.unsubscribeFromAllButtons(gameObj);
+        this.unsubscribeFromCursorMove(gameObj);
+    }
     isHeld(inputStr){ return this.held.includes(inputStr.toLowerCase()); }
     updateScreenVars(w, h, dpr)
     {
@@ -350,15 +372,17 @@ export class inputManager
 export class gameState 
 {
     players = {};
-    localPlayerId = -1;
+    controlledPlayerId = -1;
     constructor(){}
     addPlayer(obj, id) { this.players[id] = obj; }
     removePlayer(id) { delete this.players[id]; }
     getPlayer(id) { return this.players[id]; }
-    setLocalPlayer(id)
+    setControlledPlayer(id)
     {
-        this.localPlayerId = id;
-        this.players[id].becomeLocalPlayer();
+        if(this.controlledPlayer != -1)
+            this.players[id].setControlled(false);
+        this.controlledPlayerId = id;
+        this.players[id].setControlled(true);
     }
 }
 
@@ -368,12 +392,17 @@ export class player extends gameObject
     height = 0;
     speed = 3;
     id = 0;
+    controlled = false;
+    headMesh = null;
     constructor(args)
     {
-        super(args.handler.meshes.player, false);
+        super(args.handler.meshes.player, Object.hasOwn(args, "isLocal") ? args.isLocal : true);
+        
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
+        this.headMesh = args.handler.meshes.playerHead;
+        this.headMesh.rotateX(Math.PI / 2);
 
         this.id = args.id ?? 0;
         args.handler.gameState.addPlayer(this, this.id);
@@ -383,27 +412,48 @@ export class player extends gameObject
         this.addSendingData("position", () => trimVector3(this.getPos()),
         (data, dt, time) => {
             this.setPos(lerp(this.getPos(), data.target, dt * 4));
-            return this.getPos().sub(data.target).length < 0.1;
+            return this.getPos().sub(data.target).length < 0.01;
         });
 
-        this.addSendingData("rotation", () => trimVector3(this.mesh.rotation), 
+        this.addSendingData("yaw", () => trimVector3(this.mesh.rotation.z), 
         (data, dt, time) => {
             const quat = new THREE.Quaternion();
-            quat.setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
+            quat.setFromEuler(new THREE.Euler(0, 0, data.target.z, "XYZ"));
             this.mesh.quaternion.slerp(quat, dt * 4);
             return this.mesh.quaternion == quat;
         });
-    }
-    becomeLocalPlayer()
-    {
-        this.handler.setLocal(this, true);
-        this.cameraRoot.add(this.handler.camera);
-        this.handler.camera.position.set(0, 0, 0);
-        this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, 0)));
-        this.handler.inputManager.subscribeToCursorMove((e) => {
-            this.mesh.rotateZ(-e.deltaCoord.x * 2);
-            this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
+
+        this.addSendingData("headRotation", () => {
+            const euler = new THREE.Euler();
+            euler.setFromQuaternion(this.cameraRoot.getWorldQuaternion(new THREE.Quaternion()));
+            return trimVector3(euler);
+        },
+        (data, dt, time) => {
+            const quat = new THREE.Quaternion();
+            quat.setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
+            this.cameraRoot.quaternion.slerp(quat, dt * 4);
+            return this.cameraRoot.quaternion == quat;
         });
+    }
+    setControlled(controlled)
+    {
+        if(controlled)
+        {
+            this.cameraRoot.add(this.handler.camera);
+            this.handler.camera.position.set(0, 0, 0);
+            this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, 0)));
+            //this.cameraRoot.remove(this.headMesh);
+
+            this.handler.inputManager.subscribeToCursorMove(this, (e) => {
+                this.mesh.rotateZ(-e.deltaCoord.x * 2);
+                this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
+            });
+        }
+        else
+        {
+            this.cameraRoot.add(this.headMesh);
+            this.handler.inputManager.unsubscribeFromAllInput(this);
+        }
     }
     tick(dt, time)
     {
