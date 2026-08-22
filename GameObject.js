@@ -139,6 +139,16 @@ export class handler
             go.send(action);
         }
     }
+    setLocal(gameObj, isLocal)
+    {
+        const getArr = (local) => { return (local ? this.localGameObjects : this.nonLocalGameObjects) };
+        
+        const arr = getArr(gameObj.isLocal);
+        arr.splice(arr.indexOf(gameObj), 1);
+        
+        gameObj.isLocal = isLocal;
+        getArr(isLocal).push(gameObj);
+    }
 }
 
 //abstract base class, should never be created
@@ -197,7 +207,7 @@ export class gameObject extends EventTarget
         {
             if(data.caughtUp)
                 continue;
-            data.caughtUp = data.catchUp({ ...data, dt, time });
+            data.caughtUp = data.catchUp(data, dt, time);
         }
     }
     send(action)
@@ -365,22 +375,21 @@ export class player extends gameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData("position", () => trimVector3(this.getPos()), (data) => {
-            this.setPos(lerp(this.getPos(), data.target, data.dt));
+        this.addSendingData("position", () => trimVector3(this.getPos()),
+        (data, dt, time) => {
+            this.setPos(lerp(this.getPos(), data.target, dt));
             return this.getPos().sub(data.target).length < 0.1;
         });
 
-        this.addSendingData("rotation", () => {
-            const vec = this.mesh.rotation;
-            return { x: vec.x,  }; 
-        }, (data) => {
-            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, data.dt));
+        this.addSendingData("rotation", () => trimVector3(this.mesh.rotation), 
+        (data, dt, time) => {
+            this.mesh.rotation.set(lerp(this.mesh.rotation, data.target, dt));
             return this.mesh.rotation.clone().sub(data.target).length < 0.1;
         });
     }
     becomeLocalPlayer()
     {
-        this.isLocal = true;
+        this.handler.setLocal(this, true);
         this.cameraRoot.add(this.handler.camera);
         this.handler.camera.position.set(0, 0, 0);
         this.handler.camera.lookAt(this.getPos().add(new THREE.Vector3(0, 1, 0)));
@@ -391,9 +400,10 @@ export class player extends gameObject
     }
     tick(dt, time)
     {
+        super.tick();
+
         if(this.isLocal)
         {
-            console.log(this.isLocal);
             //calculate movement direction
             const moveInput = new THREE.Vector2();
             if(this.handler.inputManager.isHeld('w')) moveInput.y += 1;
