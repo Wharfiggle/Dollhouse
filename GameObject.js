@@ -215,10 +215,11 @@ export class gameObject extends EventTarget
     {
         const catchUp = this.catchUpData[name].catchUp;
         const start = untrimData(this.sendingData[name].getter());
+        const targ = untrimData(target);
         this.catchUpData[name] = {
             catchUp: catchUp,
             caughtUp: false,
-            target: full ? untrimData(target) : start + untrimData(target),
+            target: full ? targ : (targ instanceof THREE.Vector3 ? start.clone().add(targ) : start + targ),
             start: start,
             timer: 0
         };
