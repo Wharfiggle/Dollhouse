@@ -19,9 +19,9 @@ function trimVector2(vec2) { return [vec2.x, vec2.y]; }
 function untrimData(data)
 {
     if(data.length == 3)
-        return new THREE.Vector3(data.x, data.y, data.z);
+        return new THREE.Vector3(data[0], data[1], data[2]);
     else if(data.length == 2)
-        return new THREE.Vector2(data.x, data.y);
+        return new THREE.Vector2(data[0], data[1]);
     
     return data;
 }
@@ -219,6 +219,7 @@ export class gameObject extends EventTarget
             return;
 
         let data = {};
+        let numValues = 0;
         for(const [key, sd] of Object.entries(this.sendingData))
         {
             const value = sd.getter();
@@ -228,10 +229,14 @@ export class gameObject extends EventTarget
             {
                 data[key] = value;
                 this.lastSentData[key] = value;
+                numValues++;
             }
         }
-        if(data.length > 0)
+        if(numValues > 0)
+        {
             action.send(data);
+            console.log(data);
+        }
     }
     setPos(vector3)
     {
@@ -423,18 +428,17 @@ export class player extends gameObject
         this.addSendingData("position", () => trimVector3(this.getPos()),
         (data, si, dt) => {
             data.timer = (data.timer ?? 0) + dt;
-            const t = Math.min(si, data.timer);
-            console.log(t);
+            const t = Math.min(si, data.timer) / si;
             this.setPos(lerp(data.start, data.target, t));
-            return data.timer >= si;
+            return t >= 1;
         });
 
         this.addSendingData("yaw", () => this.mesh.rotation.z, 
         (data, si, dt) => {
             data.timer = (data.timer ?? 0) + dt;
-            const t = Math.min(si, data.timer);
+            const t = Math.min(si, data.timer) / si;
             this.mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, data.start + (data.target - data.start) * t, "XYZ"));
-            return data.timer >= si;
+            return t >= 1;
         });
 
         this.addSendingData("headRotation", () => trimVector3(this.cameraRoot.rotation),
@@ -445,11 +449,11 @@ export class player extends gameObject
                 data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
                 data.quatted = true;
             }
-            data.timer = (data.timer ?? 0) + dt;
+            data.timer = (data.timer ?? 0) + dt / si;
             const t = Math.min(si, data.timer);
             this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
             console.log(this.cameraRoot.rotation);
-            return data.timer >= si;
+            return t >= 1;
         });
     }
     setControlled(controlled)
