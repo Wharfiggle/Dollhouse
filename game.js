@@ -59,8 +59,12 @@ function loadGame()
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    const sendInterval = 1 / 20; //send online information 30 times per second
+    //todo move to gameState and rename gameState to multiplayerManager
+    const sendInterval = 1 / 20; //send online information 20 times per second
+    const sendFullInterval = 1 / 5 //only send full information 5 times per second, otherwise send more compressed delta information
     let sendTimer = 0;
+    let sendFullTimer = 0;
+    let playerJoined = false;
 
     //handlers and managers
     const inputManager = new GameObject.inputManager(w, h, dpr);
@@ -77,12 +81,14 @@ function loadGame()
     handler.newGameObject(GameObject.ground);
 
 
+    //todo move to mutiplayerManager
     //p2p multiplayer
     const room = joinRoom({ appId: "dollhouse" }, "test-room");
     room.onPeerJoin = (peerId) => {
         console.log("Player joined room: " + peerId);
         const newPlayer = handler.newGameObject(GameObject.player, { id: peerId, isLocal: false, startPos: new THREE.Vector3(0, 0, 10)});
         gameState.addPlayer(newPlayer, peerId);
+        playerJoined = true;
     };
     room.onPeerLeave = (peerId) => {
         console.log("Player disconnected: " + peerId);
@@ -92,9 +98,11 @@ function loadGame()
     const playerUpdate = room.makeAction("playerUpdate");
     playerUpdate.onMessage = (data, { peerId }) => { 
         const player = gameState.getPlayer(peerId);
+        const full = data.full;
+        delete data.full;
         for(const [key, value] of Object.entries(data))
         {
-            player.receiveCatchUpData(key, value);
+            player.receiveCatchUpData(key, value, full);
         }
     }
 
@@ -129,7 +137,10 @@ function loadGame()
         
         sendTimer += dt;
         if(sendTimer >= sendInterval)
-            handler.send(playerUpdate);
+        {
+            handler.send(playerUpdate, sendFullTimer >= sendFullInterval, playerJoined);
+            playerJoined = false;
+        }
 
         handler.tick(dt, time);
 

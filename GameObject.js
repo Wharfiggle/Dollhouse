@@ -14,6 +14,20 @@ function lerp(vec1, vec2, t)
     return a.add( b.sub(a).multiplyScalar(t) );
 }
 
+//todo compress numbers
+function deltaArray(arr1, arr2)
+{
+    let result = [];
+    for(let i = 0; i < arr1.length; i++)
+    {
+        if(arr2.length <= i)
+            result.push(arr1); //this shouldnt happen but just in case default to arr1 value if arr2 is shorter than arr1
+        result.push(arr1[i] - arr2[i]);
+    }
+    return result;
+}
+
+//todo compress numbers
 function trimVector3(vec3) { return [vec3.x, vec3.y, vec3.z]; }
 function trimVector2(vec2) { return [vec2.x, vec2.y]; }
 function untrimData(data)
@@ -142,11 +156,11 @@ export class handler
         }
         this.unshiftGameObjects = [];
     }
-    send(action)
+    send(action, full, all)
     {
         for(const go of this.localGameObjects)
         {
-            go.send(action);
+            go.send(action, full, all);
         }
     }
     setLocal(gameObj, isLocal)
@@ -197,14 +211,15 @@ export class gameObject extends EventTarget
         this.sendingData[name] = { getter: getter };
         this.catchUpData[name] = { catchUp: catchUp, caughtUp: true, target: null, start: null, timer: 0 };
     }
-    receiveCatchUpData(name, target)
+    receiveCatchUpData(name, target, full)
     {
         const catchUp = this.catchUpData[name].catchUp;
+        const start = untrimData(this.sendingData[name].getter());
         this.catchUpData[name] = {
             catchUp: catchUp,
             caughtUp: false,
-            target: untrimData(target),
-            start: untrimData(this.sendingData[name].getter()),
+            target: full ? untrimData(target) : start + untrimData(target),
+            start: start,
             timer: 0
         };
     }
@@ -219,7 +234,7 @@ export class gameObject extends EventTarget
             data.caughtUp = data.catchUp(data, t, sendInterval, dt, time);
         }
     }
-    send(action)
+    send(action, full, all)
     {
         if(!this.isLocal)
             return;
@@ -231,8 +246,9 @@ export class gameObject extends EventTarget
             const value = sd.getter();
             const lastSent = this.lastSentData[key];
             const areArrays = Array.isArray(value) && Array.isArray(lastSent);
-            if(areArrays ? !value.every((v, i) => v == lastSent[i]) : value != lastSent)
+            if(all || (areArrays ? !value.every((v, i) => v == lastSent[i]) : value != lastSent))
             {
+                const sentData = full ? value : (areArrays ? deltaArray(value, lastSent) : value - lastSent);
                 data[key] = value;
                 this.lastSentData[key] = value;
                 numValues++;
@@ -240,8 +256,7 @@ export class gameObject extends EventTarget
         }
         if(numValues > 0)
         {
-            action.send(data);
-            console.log(data);
+            action.send({ ...data, full: full });
         }
     }
     setPos(vector3)
@@ -431,7 +446,7 @@ export class player extends gameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData("position", () => trimVector3(this.getPos()),
+        this.addSendingData("pos", () => trimVector3(this.getPos()),
         (data, t) => {
             this.setPos(lerp(data.start, data.target, t));
             return t >= 1;
@@ -457,7 +472,7 @@ export class player extends gameObject
                 data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target, 0, 0));
                 data.formatted = true;
             }
-            this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
+            this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
             return t >= 1;
         });
     }
