@@ -237,6 +237,8 @@ export class gameObject extends EventTarget
     }
     send(action, full, all)
     {
+        console.log(full);
+
         if(!this.isLocal)
             return;
 
@@ -250,8 +252,8 @@ export class gameObject extends EventTarget
             if(all || (areArrays ? !value.every((v, i) => v == lastSent[i]) : value != lastSent))
             {
                 const sentData = full ? value : (areArrays ? deltaArray(value, lastSent) : value - lastSent);
-                data[key] = value;
-                this.lastSentData[key] = value;
+                data[key] = sentData;
+                this.lastSentData[key] = sentData;
                 numValues++;
             }
         }

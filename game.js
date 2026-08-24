@@ -136,10 +136,13 @@ function loadGame()
         ghostUi.globalCompositeOperation = "source-over";
         
         sendTimer += dt;
+        sendFullTimer += dt;
         if(sendTimer >= sendInterval)
         {
             handler.send(playerUpdate, sendFullTimer >= sendFullInterval, playerJoined);
             playerJoined = false;
+            sendTimer = 0;
+            sendFullTimer = 0;
         }
 
         handler.tick(dt, time);
