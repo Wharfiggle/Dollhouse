@@ -237,8 +237,6 @@ export class gameObject extends EventTarget
     }
     send(action, full, all)
     {
-        console.log(full);
-
         if(!this.isLocal)
             return;
 
