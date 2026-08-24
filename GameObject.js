@@ -124,7 +124,7 @@ export class handler
         }
         for(const go of this.nonLocalGameObjects)
         {
-            go.catchUp(dt, time);
+            go.catchUp(this.gameState.sendInterval, dt, time);
         }
 
         for(const rgo of this.removeGameObjects)
@@ -172,6 +172,7 @@ export class gameObject extends EventTarget
     tags = [];
     isLocal = true;
     sendingData = {};
+    lastSentData = null;
     catchUpData = {};
     constructor(mesh = null, isLocal = true)
     {
@@ -206,13 +207,13 @@ export class gameObject extends EventTarget
         cud.target = untrimData(target);
         cud.start = untrimData(this.sendingData[name].getter());
     }
-    catchUp(dt, time)
+    catchUp(sendInterval, dt, time)
     {
         for(const [key, data] of Object.entries(this.catchUpData))
         {
             if(data.caughtUp)
                 continue;
-            data.caughtUp = data.catchUp(data, dt, time);
+            data.caughtUp = data.catchUp(data, sendInterval, dt, time);
         }
     }
     send(action)
@@ -221,11 +222,14 @@ export class gameObject extends EventTarget
             return;
 
         let data = {};
-        for(const [key, value] of Object.entries(this.sendingData))
+        for(const [key, data] of Object.entries(this.sendingData))
         {
-            data[key] = value.getter();
+            const value = data.getter();
+            if((this.lastSentData ?? {})[key] != value)
+                data[key] = value;
         }
         action.send(data);
+        this.lastSentData = data;
     }
     setPos(vector3)
     {
@@ -373,7 +377,11 @@ export class gameState
 {
     players = {};
     controlledPlayerId = -1;
-    constructor(){}
+    sendInterval = 0;
+    constructor(sendInterval)
+    {
+        this.sendInterval = sendInterval;
+    }
     addPlayer(obj, id) { this.players[id] = obj; }
     removePlayer(id) { delete this.players[id]; }
     getPlayer(id) { return this.players[id]; }
@@ -411,25 +419,34 @@ export class player extends gameObject
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
         this.addSendingData("position", () => trimVector3(this.getPos()),
-        (data, dt, time) => {
-            this.setPos(lerp(this.getPos(), data.target, dt * 4));
-            return this.getPos().sub(data.target).length < 0.01;
+        (data, si, dt) => {
+            data.timer = (data.timer ?? 0) + dt;
+            const t = Math.min(si, data.timer);
+            console.log(t);
+            this.setPos(lerp(data.start, data.target, t));
+            return data.timer >= si;
         });
 
         this.addSendingData("yaw", () => this.mesh.rotation.z, 
-        (data, dt, time) => {
-            const quat = new THREE.Quaternion();
-            quat.setFromEuler(new THREE.Euler(0, 0, data.target, "XYZ"));
-            this.mesh.quaternion.slerp(quat, dt * 4);
-            return this.mesh.quaternion == quat;
+        (data, si, dt) => {
+            data.timer = (data.timer ?? 0) + dt;
+            const t = Math.min(si, data.timer);
+            this.mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, data.start + (data.target - data.start) * t, "XYZ"));
+            return data.timer >= si;
         });
 
         this.addSendingData("headRotation", () => trimVector3(this.cameraRoot.rotation),
-        (data, dt, time) => {
-            const quat = new THREE.Quaternion();
-            quat.setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
-            this.cameraRoot.quaternion.slerp(quat, dt * 4);
-            return this.cameraRoot.quaternion == quat;
+        (data, si, dt) => {
+            if(!data.quatted)
+            {
+                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.start.x, data.start.y, data.start.z, "XYZ"));
+                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
+                data.quatted = true;
+            }
+            data.timer = (data.timer ?? 0) + dt;
+            const t = Math.min(si, data.timer);
+            this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
+            return data.timer >= si;
         });
     }
     setControlled(controlled)

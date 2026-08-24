@@ -59,9 +59,12 @@ function loadGame()
     dirLight.castShadow = true;
     scene.add(dirLight);
 
+    const sendInterval = 1 / 20; //send online information 30 times per second
+    let sendTimer = 0;
+
     //handlers and managers
     const inputManager = new GameObject.inputManager(w, h, dpr);
-    const gameState = new GameObject.gameState();
+    const gameState = new GameObject.gameState(sendInterval);
     const handler = new GameObject.handler(scene, camera, ui, ghostUi, meshes, inputManager, gameState);
 
     handleWindowResize();
@@ -103,8 +106,6 @@ function loadGame()
 
     //tick
     let lastTime = 0;
-    const sendInterval = 1 / 30; //send online information 30 times per second
-    let sendTimer = 0;
     function tick(t = 0)
     {
         requestAnimationFrame(tick);
