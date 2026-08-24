@@ -139,10 +139,15 @@ function loadGame()
         sendFullTimer += dt;
         if(sendTimer >= sendInterval)
         {
-            handler.send(playerUpdate, sendFullTimer >= sendFullInterval, playerJoined);
+            let full = false;
+            if(sendFullTimer >= sendFullInterval)
+            {
+                full = true;
+                sendFullTimer = 0;
+            }
+            handler.send(playerUpdate, full, playerJoined);
             playerJoined = false;
             sendTimer = 0;
-            sendFullTimer = 0;
         }
 
         handler.tick(dt, time);
