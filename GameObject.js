@@ -195,14 +195,18 @@ export class gameObject extends EventTarget
     addSendingData(name, getter, catchUp)
     {
         this.sendingData[name] = { getter: getter };
-        this.catchUpData[name] = { catchUp: catchUp, caughtUp: true, target: null, start: null };
+        this.catchUpData[name] = { catchUp: catchUp, caughtUp: true, target: null, start: null, timer: 0 };
     }
     receiveCatchUpData(name, target)
     {
-        const cud = this.catchUpData[name];
-        cud.caughtUp = false;
-        cud.target = untrimData(target);
-        cud.start = untrimData(this.sendingData[name].getter());
+        const catchUp = this.catchUpData[name].catchUp;
+        this.catchUpData[name] = {
+            catchUp: catchUp,
+            caughtUp: false,
+            target: untrimData(target),
+            start: untrimData(this.sendingData[name].getter()),
+            timer: 0
+        };
     }
     catchUp(sendInterval, dt, time)
     {
@@ -210,7 +214,9 @@ export class gameObject extends EventTarget
         {
             if(data.caughtUp)
                 continue;
-            data.caughtUp = data.catchUp(data, sendInterval, dt, time);
+            data.timer += dt;
+            const t = Math.min(1, data.timer / sendInterval);
+            data.caughtUp = data.catchUp(data, t, sendInterval, dt, time);
         }
     }
     send(action)
@@ -426,33 +432,32 @@ export class player extends gameObject
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
         this.addSendingData("position", () => trimVector3(this.getPos()),
-        (data, si, dt) => {
-            data.timer = (data.timer ?? 0) + dt;
-            const t = Math.min(si, data.timer) / si;
+        (data, t) => {
             this.setPos(lerp(data.start, data.target, t));
             return t >= 1;
         });
 
-        this.addSendingData("yaw", () => this.mesh.rotation.z, 
-        (data, si, dt) => {
-            data.timer = (data.timer ?? 0) + dt;
-            const t = Math.min(si, data.timer) / si;
-            this.mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, data.start + (data.target - data.start) * t, "XYZ"));
+        this.addSendingData("yaw", () => this.mesh.rotation.z,
+        (data, t) => {
+            if(!data.formatted)
+            {
+                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, data.start));
+                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, data.target));
+                data.formatted = true;
+            }
+            this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
             return t >= 1;
         });
 
-        this.addSendingData("headRotation", () => trimVector3(this.cameraRoot.rotation),
-        (data, si, dt) => {
-            if(!data.quatted)
+        this.addSendingData("headPitch", () => this.cameraRoot.rotation.x,
+        (data, t) => {
+            if(!data.formatted)
             {
-                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.start.x, data.start.y, data.start.z, "XYZ"));
-                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target.x, data.target.y, data.target.z, "XYZ"));
-                data.quatted = true;
+                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.start, 0, 0));
+                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target, 0, 0));
+                data.formatted = true;
             }
-            data.timer = (data.timer ?? 0) + dt / si;
-            const t = Math.min(si, data.timer);
-            this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
-            console.log(this.cameraRoot.rotation);
+            this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
             return t >= 1;
         });
     }
