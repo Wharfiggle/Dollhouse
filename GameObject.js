@@ -14,16 +14,13 @@ function lerp(vec1, vec2, t)
     return a.add( b.sub(a).multiplyScalar(t) );
 }
 
-function trimVector3(vec3) { return { x: vec3.x, y: vec3.y, z: vec3.z }; }
-function trimVector2(vec2) { return { x: vec2.x, y: vec2.y }; }
+function trimVector3(vec3) { return [vec3.x, vec3.y, vec3.z]; }
+function trimVector2(vec2) { return [vec2.x, vec2.y]; }
 function untrimData(data)
 {
-    const x = Object.hasOwn(data, 'x');
-    const y = Object.hasOwn(data, 'y');
-    const z = Object.hasOwn(data, 'z');
-    if(x && y && z)
+    if(data.length == 3)
         return new THREE.Vector3(data.x, data.y, data.z);
-    else if(x && y)
+    else if(data.length == 2)
         return new THREE.Vector2(data.x, data.y);
     
     return data;
@@ -172,7 +169,7 @@ export class gameObject extends EventTarget
     tags = [];
     isLocal = true;
     sendingData = {};
-    lastSentData = null;
+    lastSentData = {};
     catchUpData = {};
     constructor(mesh = null, isLocal = true)
     {
@@ -222,14 +219,19 @@ export class gameObject extends EventTarget
             return;
 
         let data = {};
-        for(const [key, data] of Object.entries(this.sendingData))
+        for(const [key, sd] of Object.entries(this.sendingData))
         {
-            const value = data.getter();
-            if((this.lastSentData ?? {})[key] != value)
+            const value = sd.getter();
+            const lastSent = this.lastSentData[key];
+            const areArrays = Array.isArray(value) && Array.isArray(lastSent);
+            if(areArrays ? !value.every((v, i) => v == lastSent[i]) : value != lastSent)
+            {
                 data[key] = value;
+                this.lastSentData[key] = value;
+            }
         }
-        action.send(data);
-        this.lastSentData = data;
+        if(data.length > 0)
+            action.send(data);
     }
     setPos(vector3)
     {
@@ -446,6 +448,7 @@ export class player extends gameObject
             data.timer = (data.timer ?? 0) + dt;
             const t = Math.min(si, data.timer);
             this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
+            console.log(this.cameraRoot.rotation);
             return data.timer >= si;
         });
     }
