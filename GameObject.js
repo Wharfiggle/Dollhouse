@@ -219,7 +219,7 @@ export class gameObject extends EventTarget
         this.catchUpData[name] = {
             catchUp: catchUp,
             caughtUp: false,
-            target: full ? targ : (targ instanceof THREE.Vector3 ? start.clone().add(targ) : start + targ),
+            target: full ? targ : (targ instanceof THREE.Vector3 ? targ.clone().sub(start) : targ - start),
             start: start,
             timer: 0
         };
@@ -245,20 +245,33 @@ export class gameObject extends EventTarget
         for(const [key, sd] of Object.entries(this.sendingData))
         {
             const value = sd.getter();
-            const lastSent = this.lastSentData[key];
-            const areArrays = Array.isArray(value) && Array.isArray(lastSent);
-            if(all || (areArrays ? !value.every((v, i) => v == lastSent[i]) : value != lastSent))
+            let lastSent = this.lastSentData[key];
+            if(lastSent == null)
             {
-                const sentData = full ? value : (areArrays ? deltaArray(value, lastSent) : value - lastSent);
-                data[key] = sentData;
-                this.lastSentData[key] = sentData;
+                data[key] = value;
+                this.lastSentData[key] = [value, value];
                 numValues++;
+                full = true;
+            }
+            else
+            {
+                const areArrays = Array.isArray(value) && Array.isArray(lastSent[0]) && Array.isArray(lastSent[1]);
+                if(all || !full || (areArrays ? !value.every((v, i) => v == lastSent[1][i]) : value != lastSent[1])) //uses last delta
+                {
+                    let sentData = value;
+                    if(!full && lastSent[0] != null)
+                        sentData = (areArrays ? deltaArray(value, lastSent[0]) : value - lastSent[0]); //uses last position
+                    //console.log("big shit", sentData, value, lastSent[0], deltaArray(value, lastSent[0]), value - lastSent[0]);
+                    data[key] = sentData;
+                    if(Number.isNaN(data[key]))
+                        console.log(full, lastSent[0] == null, areArrays, lastSent[0], lastSent[1], value);
+                    this.lastSentData[key] = [value, sentData]; //position, delta
+                    numValues++;
+                }
             }
         }
         if(numValues > 0)
-        {
             action.send({ ...data, full: full });
-        }
     }
     setPos(vector3)
     {

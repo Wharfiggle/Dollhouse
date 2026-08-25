@@ -145,7 +145,7 @@ function loadGame()
                 full = true;
                 sendFullTimer = 0;
             }
-            handler.send(playerUpdate, true, playerJoined);
+            handler.send(playerUpdate, full, playerJoined);
             playerJoined = false;
             sendTimer = 0;
         }
