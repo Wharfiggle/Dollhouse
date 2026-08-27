@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { joinRoom } from "trystero";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
 
 const modelLoader = new GLTFLoader();
@@ -77,17 +78,19 @@ export class handler
     tagGroups = {};
     meshes = {};
     camera = null;
-    inputManager = null;
-    gameState = null;
-    constructor(scene, camera, ui, ghostUi, meshes, inputManager, gameState)
+    input = null;
+    multiplayer = null;
+    constructor(scene, camera, ui, ghostUi, meshes, input, multiplayer)
     {
         this.scene = scene;
         this.ui = ui;
         this.ghostUi = ghostUi;
         this.meshes = meshes;
         this.camera = camera;
-        this.inputManager = inputManager;
-        this.gameState = gameState;
+        this.input = input;
+        this.multiplayer = multiplayer;
+
+        this.multiplayer.init(this);
 
         //preload meshes and keep in memory to prevent lag spikes on spawns
         for(const [key, mesh] of Object.entries(meshes))
@@ -156,7 +159,7 @@ export class handler
         }
         for(const go of this.nonLocalGameObjects)
         {
-            go.catchUp(this.gameState.sendInterval, dt, time);
+            go.catchUp(this.multiplayer.sendInterval, dt, time);
         }
 
         for(const rgo of this.removeGameObjects)
@@ -322,7 +325,7 @@ export class gameObject extends EventTarget
     }
 }
 
-export class inputManager
+export class input
 {
     w = 0;
     h = 0;
@@ -444,14 +447,60 @@ export class inputManager
     }
 }
 
-export class gameState 
+export class multiplayer
 {
+    sendInterval = 1 / 20; //period at which delta data is sent (more compressed)
+    sendFullInterval = 1 / 2; //period at which full data is sent
+    sendTimer = 0;
+    sendFullTimer = 0;
+    room;
+    stateUpdate;
+    handler;
     players = {};
     controlledPlayerId = -1;
-    sendInterval = 0;
-    constructor(sendInterval)
+    playerJoined = false;
+    init(handler)
     {
-        this.sendInterval = sendInterval;
+        this.handler = handler;
+        this.room = joinRoom({ appId: "dollhouse" }, "test-room");
+        this.room.onPeerJoin = (peerId) => {
+            console.log("Player joined room: " + peerId);
+            const newPlayer = this.handler.newGameObject(player, { id: peerId, isLocal: false, startPos: new THREE.Vector3(0, 0, 10)});
+            this.addPlayer(newPlayer, peerId);
+            this.playerJoined = true;
+        };
+        this.room.onPeerLeave = (peerId) => {
+            console.log("Player disconnected: " + peerId);
+            this.handler.removeGameObject(this.getPlayer(peerId));
+            this.removePlayer(peerId);
+        };
+        this.stateUpdate = this.room.makeAction("stateUpdate");
+        this.stateUpdate.onMessage = (data, { peerId }) => { 
+            const player = this.getPlayer(peerId);
+            const full = data.full;
+            delete data.full;
+            for(const [key, value] of Object.entries(data))
+            {
+                player.receiveCatchUpData(key, value, full);
+            }
+        }
+    }
+    send(dt, time)
+    {
+        this.sendTimer += dt;
+        this.sendFullTimer += dt;
+        if(this.sendTimer >= this.sendInterval)
+        {
+            let full = false;
+            if(this.sendFullTimer >= this.sendFullInterval)
+            {
+                full = true;
+                this.sendFullTimer = 0;
+            }
+            this.handler.send(this.stateUpdate, full, this.playerJoined);
+            this.playerJoined = false;
+            this.sendTimer = 0;
+        }
     }
     addPlayer(obj, id) { this.players[id] = obj; }
     removePlayer(id) { delete this.players[id]; }
@@ -488,7 +537,7 @@ export class player extends gameObject
         this.headMesh.material = this.headMesh.material.clone();
 
         this.id = args.id ?? 0;
-        args.handler.gameState.addPlayer(this, this.id);
+        args.handler.multiplayer.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
@@ -547,17 +596,17 @@ export class player extends gameObject
             this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, -1, this.height * 1.5)));
             this.cameraRoot.remove(this.headMesh);
 
-            this.handler.inputManager.subscribeToCursorMove(this, (e) => {
+            this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
                 this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
             });
-            this.handler.inputManager.subscribeToButton(this, "r", false, () => this.setRed(true));
-            this.handler.inputManager.subscribeToButton(this, "r", true, () => this.setRed(false));
+            this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(true));
+            this.handler.input.subscribeToButton(this, "r", true, () => this.setRed(false));
         }
         else
         {
             this.cameraRoot.add(this.headMesh);
-            this.handler.inputManager.unsubscribeFromAllInput(this);
+            this.handler.input.unsubscribeFromAllInput(this);
         }
     }
     tick(dt, time)
@@ -568,10 +617,10 @@ export class player extends gameObject
         {
             //calculate movement direction
             const moveInput = new THREE.Vector2();
-            if(this.handler.inputManager.isHeld('w')) moveInput.y += 1;
-            if(this.handler.inputManager.isHeld('s')) moveInput.y -= 1;
-            if(this.handler.inputManager.isHeld('d')) moveInput.x += 1;
-            if(this.handler.inputManager.isHeld('a')) moveInput.x -= 1;
+            if(this.handler.input.isHeld('w')) moveInput.y += 1;
+            if(this.handler.input.isHeld('s')) moveInput.y -= 1;
+            if(this.handler.input.isHeld('d')) moveInput.x += 1;
+            if(this.handler.input.isHeld('a')) moveInput.x -= 1;
             if(moveInput.length() > 0)
             {
                 const pos = this.getPos();

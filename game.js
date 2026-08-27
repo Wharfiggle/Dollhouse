@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { joinRoom } from "trystero";
 import * as GameObject from "./GameObject.js";
 import { getMeshes } from "./Shaders.js";
 
@@ -59,7 +58,6 @@ function loadGame()
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    //todo move to gameState and rename gameState to multiplayerManager
     const sendInterval = 1 / 20; //send online information 20 times per second
     const sendFullInterval = 1 / 2 //only send full information 2 times per second, otherwise send more compressed delta information
     let sendTimer = 0;
@@ -67,44 +65,18 @@ function loadGame()
     let playerJoined = false;
 
     //handlers and managers
-    const inputManager = new GameObject.inputManager(w, h, dpr);
-    const gameState = new GameObject.gameState(sendInterval);
-    const handler = new GameObject.handler(scene, camera, ui, ghostUi, meshes, inputManager, gameState);
+    const input = new GameObject.input(w, h, dpr);
+    const multiplayer = new GameObject.multiplayer();
+    const handler = new GameObject.handler(scene, camera, ui, ghostUi, meshes, input, multiplayer);
 
     handleWindowResize();
 
 
     //game objects
     handler.newGameObject(GameObject.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
-    handler.gameState.setControlledPlayer(0);
+    multiplayer.setControlledPlayer(0);
     
     handler.newGameObject(GameObject.ground);
-
-
-    //todo move to mutiplayerManager
-    //p2p multiplayer
-    const room = joinRoom({ appId: "dollhouse" }, "test-room");
-    room.onPeerJoin = (peerId) => {
-        console.log("Player joined room: " + peerId);
-        const newPlayer = handler.newGameObject(GameObject.player, { id: peerId, isLocal: false, startPos: new THREE.Vector3(0, 0, 10)});
-        gameState.addPlayer(newPlayer, peerId);
-        playerJoined = true;
-    };
-    room.onPeerLeave = (peerId) => {
-        console.log("Player disconnected: " + peerId);
-        handler.removeGameObject(gameState.getPlayer(peerId));
-        gameState.removePlayer(peerId);
-    };
-    const playerUpdate = room.makeAction("playerUpdate");
-    playerUpdate.onMessage = (data, { peerId }) => { 
-        const player = gameState.getPlayer(peerId);
-        const full = data.full;
-        delete data.full;
-        for(const [key, value] of Object.entries(data))
-        {
-            player.receiveCatchUpData(key, value, full);
-        }
-    }
 
 
     //lock mouse when page is clicked
@@ -135,20 +107,7 @@ function loadGame()
         ghostUi.restore();
         ghostUi.globalCompositeOperation = "source-over";
         
-        sendTimer += dt;
-        sendFullTimer += dt;
-        if(sendTimer >= sendInterval)
-        {
-            let full = false;
-            if(sendFullTimer >= sendFullInterval)
-            {
-                full = true;
-                sendFullTimer = 0;
-            }
-            handler.send(playerUpdate, full, playerJoined);
-            playerJoined = false;
-            sendTimer = 0;
-        }
+        multiplayer.send(dt, time);
 
         handler.tick(dt, time);
 
@@ -180,7 +139,7 @@ function loadGame()
         ghostUi.height = h;
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        inputManager.updateScreenVars(w, h, dpr);
+        input.updateScreenVars(w, h, dpr);
 
         document.dispatchEvent( new CustomEvent("windowResize"), { 
             detail: {
