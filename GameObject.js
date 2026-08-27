@@ -39,7 +39,9 @@ function trimData(data)
 }
 function untrimData(data)
 {
-    if(data.length > 1)
+    if(data == null)
+        return console.log("Received null data!");
+    if(Object.hasOwn(data, "length") && data.length > 1)
     {
         let allNumbers = true;
         for(const n of data)
