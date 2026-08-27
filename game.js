@@ -61,7 +61,7 @@ function loadGame()
 
     //todo move to gameState and rename gameState to multiplayerManager
     const sendInterval = 1 / 20; //send online information 20 times per second
-    const sendFullInterval = 1 / 5 //only send full information 5 times per second, otherwise send more compressed delta information
+    const sendFullInterval = 1 / 2 //only send full information 2 times per second, otherwise send more compressed delta information
     let sendTimer = 0;
     let sendFullTimer = 0;
     let playerJoined = false;

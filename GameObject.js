@@ -28,15 +28,33 @@ function deltaArray(arr1, arr2)
 }
 
 //todo compress numbers
-function trimVector3(vec3) { return [vec3.x, vec3.y, vec3.z]; }
-function trimVector2(vec2) { return [vec2.x, vec2.y]; }
+function trimData(data)
+{
+    if(data.x && data.y && data.z)
+        return [data.x, data.y, data.x];
+    else if(data.x && data.y)
+        return [data.x, data.y];
+    else
+        return data;
+}
 function untrimData(data)
 {
-    if(data.length == 3)
-        return new THREE.Vector3(data[0], data[1], data[2]);
-    else if(data.length == 2)
-        return new THREE.Vector2(data[0], data[1]);
-    
+    if(data.length > 1)
+    {
+        let allNumbers = true;
+        for(const n of data)
+        {
+            if(!Number.isFinite(n))
+                allNumbers = false;
+        }
+        if(allNumbers)
+        {
+            if(data.length == 3)
+                return new THREE.Vector3(data[0], data[1], data[2]);
+            else if(data.length == 2)
+                return new THREE.Vector2(data[0], data[1]);
+        }
+    }
     return data;
 }
 
@@ -244,7 +262,7 @@ export class gameObject extends EventTarget
         let numValues = 0;
         for(const [key, sd] of Object.entries(this.sendingData))
         {
-            const value = sd.getter();
+            const value = trimData(sd.getter());
             let lastSent = this.lastSentData[key];
             if(lastSent == null)
             {
@@ -256,16 +274,14 @@ export class gameObject extends EventTarget
             else
             {
                 const areArrays = Array.isArray(value) && Array.isArray(lastSent[0]) && Array.isArray(lastSent[1]);
-                if(all || !full || (areArrays ? !value.every((v, i) => v == lastSent[1][i]) : value != lastSent[1])) //uses last delta
+                if(all || !full || (areArrays ? !value.every((v, i) => v == lastSent[1][i]) : value != lastSent[1])) //uses last actual sent data
                 {
                     let sentData = value;
-                    if(!full && lastSent[0] != null)
-                        sentData = (areArrays ? deltaArray(value, lastSent[0]) : value - lastSent[0]); //uses last position
-                    //console.log("big shit", sentData, value, lastSent[0], deltaArray(value, lastSent[0]), value - lastSent[0]);
+                    if(!full) //send delta
+                        sentData = (areArrays ? deltaArray(value, lastSent[0]) : value - lastSent[0]); //uses last full value
+                    sentData ??= value; //default to full value if delta operations dont work
                     data[key] = sentData;
-                    if(Number.isNaN(data[key]))
-                        console.log(full, lastSent[0] == null, areArrays, lastSent[0], lastSent[1], value);
-                    this.lastSentData[key] = [value, sentData]; //position, delta
+                    this.lastSentData[key] = [value, sentData]; //full value, actual sent data
                     numValues++;
                 }
             }
@@ -308,7 +324,7 @@ export class inputManager
     dpr = 1;
     held = [];
     buttonSubscribers = {};
-    cursorMoveSubscribers = {};
+    cursorMoveSubscribers = new Map();
     constructor(w, h, dpr)
     {
         this.w = w;
@@ -349,18 +365,25 @@ export class inputManager
     buttonEvent(event, released)
     {
         const key = event.key.toLowerCase();
-        const entry = this.buttonSubscribers[key] ?? [[],[]];
-        for(const sub of entry[released ? 1 : 0])
-        {
-            sub.callback();
-        }
+        const entry = this.buttonSubscribers[key];
+        
+        //update held
         if(!released && !this.held.includes(key))
             this.held.push(key);
         else if(released)
             this.held.splice(this.held.indexOf(key), 1);
+        
+        //call callbacks of subscribers
+        if(!entry)
+            return;
+        for(const sub of entry[released ? 1 : 0])
+        {
+            sub.callback();
+        }
     }
     cursorMoveEvent(event)
     {
+        //calculate commonly needed cursor information
         const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
         const deltaPos = new THREE.Vector2(event.movementX, event.movementY);
 
@@ -371,7 +394,8 @@ export class inputManager
         );
         const deltaCoord = new THREE.Vector2(deltaPos.x / this.w, deltaPos.y / this.h);
 
-        for(const [key, sub] of Object.entries(this.cursorMoveSubscribers))
+        //call callbacks of subscribers
+        for(const [gameObj, sub] of this.cursorMoveSubscribers)
         {
             sub.callback({ pos: pos, deltaPos: deltaPos, coord: coord, deltaCoord: deltaCoord });
         }
@@ -380,16 +404,16 @@ export class inputManager
     {
         const str = inputStr.toLowerCase();
         //if inputStr doesnt exist in subscribers then initialize as array with an empty array for pressed and released before pushing to the respective array
-        const entry = this.buttonSubscribers[str] ??= [[],[]];
-        entry[released ? 1 : 0].push({ gameObj: gameObj, callback: callback });
+        this.buttonSubscribers[str] ??= [[],[]];
+        this.buttonSubscribers[str][released ? 1 : 0].push({ gameObj: gameObj, callback: callback });
     }
-    subscribeToCursorMove(gameObj, callback) { this.cursorMoveSubscribers[gameObj] = { callback: callback }; }
-    unsubscribeFromCursorMove(gameObj) { delete this.cursorMoveSubscribers[gameObj]; }
+    subscribeToCursorMove(gameObj, callback) { this.cursorMoveSubscribers.set(gameObj, { callback: callback }); }
+    unsubscribeFromCursorMove(gameObj) { this.cursorMoveSubscribers.delete(gameObj); }
     unsubscribeFromButton(inputStr, released, gameObj)
     {
         const str = inputStr.toLowerCase();
         const arr = this.buttonSubscribers[str][released ? 1 : 0];
-        this.buttonSubscribers[str][released ? 1 : 0] = arr.filter(e => e.gameObj != gameObj);
+        this.buttonSubscribers[str][released ? 1 : 0] = arr.filter(e => e.gameObj !== gameObj);
     }
     unsubscribeFromAllButtons(gameObj)
     {
@@ -397,7 +421,7 @@ export class inputManager
         {
             for(let i = 0; i < 1; i++)
             {
-                value[i] = value[i].filter(e => e.gameObj != gameObj);
+                value[i] = value[i].filter(e => e.gameObj !== gameObj);
             }
         }
     }
@@ -429,8 +453,8 @@ export class gameState
     getPlayer(id) { return this.players[id]; }
     setControlledPlayer(id)
     {
-        if(this.controlledPlayer != -1)
-            this.players[id].setControlled(false);
+        if(this.controlledPlayerId != id && this.controlledPlayerId != -1)
+            this.players[this.controlledPlayerId].setControlled(false);
         this.controlledPlayerId = id;
         this.players[id].setControlled(true);
     }
@@ -444,23 +468,26 @@ export class player extends gameObject
     id = 0;
     controlled = false;
     headMesh = null;
+    red = false;
     constructor(args)
     {
         super(args.handler.meshes.player, Object.hasOwn(args, "isLocal") ? args.isLocal : true);
-        
+
         this.height = this.mesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.headMesh = args.handler.meshes.playerHead.clone();
         this.cameraRoot.add(this.headMesh);
-        //this.headMesh.position.set(new THREE.Vector3(0, 4, 0));
         this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
+
+        this.mesh.material = this.mesh.material.clone();
+        this.headMesh.material = this.headMesh.material.clone();
 
         this.id = args.id ?? 0;
         args.handler.gameState.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData("pos", () => trimVector3(this.getPos()),
+        this.addSendingData("pos", () => this.getPos(),
         (data, t) => {
             this.setPos(lerp(data.start, data.target, t));
             return t >= 1;
@@ -489,6 +516,21 @@ export class player extends gameObject
             this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
             return t >= 1;
         });
+
+        this.addSendingData("red", () => this.red,
+        (data) => {
+            this.setRed(data.target);
+            return true;
+        })
+    }
+    setRed(red)
+    {
+        if(red == this.red)
+            return;
+        this.red = red;
+        const color = red ? "red" : "purple";
+        this.mesh.material.color.set(color);
+        this.headMesh.material.color.set(color);
     }
     setControlled(controlled)
     {
@@ -504,6 +546,8 @@ export class player extends gameObject
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
                 this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
             });
+            this.handler.inputManager.subscribeToButton(this, "r", false, () => this.setRed(true));
+            this.handler.inputManager.subscribeToButton(this, "r", true, () => this.setRed(false));
         }
         else
         {
