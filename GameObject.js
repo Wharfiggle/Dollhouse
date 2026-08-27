@@ -39,8 +39,6 @@ function trimData(data)
 }
 function untrimData(data)
 {
-    if(data == null)
-        return console.log("Received null data!");
     if(Object.hasOwn(data, "length") && data.length > 1)
     {
         let allNumbers = true;
@@ -233,6 +231,8 @@ export class gameObject extends EventTarget
     }
     receiveCatchUpData(name, target, full)
     {
+        if(target == null)
+            return console.log("Received null data! Discarding...", name, target);
         const catchUp = this.catchUpData[name].catchUp;
         const start = untrimData(this.sendingData[name].getter());
         const targ = untrimData(target);
