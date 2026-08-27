@@ -30,9 +30,12 @@ function deltaArray(arr1, arr2)
 //todo compress numbers
 function trimData(data)
 {
-    if(data.x && data.y && data.z)
-        return [data.x, data.y, data.x];
-    else if(data.x && data.y)
+    const x = Object.hasOwn(data, 'x');
+    const y = Object.hasOwn(data, 'y');
+    const z = Object.hasOwn(data, 'z');
+    if(x && y && z)
+        return [data.x, data.y, data.z];
+    else if(x && y)
         return [data.x, data.y];
     else
         return data;
@@ -232,9 +235,9 @@ export class gameObject extends EventTarget
     receiveCatchUpData(name, target, full)
     {
         if(target == null)
-            return console.log("Received null data! Discarding...", name, target);
+            return console.error("Received null data! Discarding...", name, target);
         const catchUp = this.catchUpData[name].catchUp;
-        const start = untrimData(this.sendingData[name].getter());
+        const start = this.sendingData[name].getter();
         const targ = untrimData(target);
         this.catchUpData[name] = {
             catchUp: catchUp,
