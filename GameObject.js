@@ -8,6 +8,14 @@ const uiScaleHeight = 1000;
 
 let dpr = window.devicePixelRatio || 1;
 
+const sendingDataIds = {
+    pos: 0,
+    yaw: 1,
+    headPitch: 2,
+    red: 3
+};
+
+
 function lerp(vec1, vec2, t)
 {
     const a = vec1.clone();
@@ -531,7 +539,7 @@ export class player extends gameObject
         this.mesh.add(this.cameraRoot);
         this.headMesh = args.handler.meshes.playerHead.clone();
         this.cameraRoot.add(this.headMesh);
-        this.cameraRoot.position.set(0, -this.height, this.height * 1.5);
+        this.cameraRoot.position.set(0, 0, this.height * 1.5);
 
         this.mesh.material = this.mesh.material.clone();
         this.headMesh.material = this.headMesh.material.clone();
@@ -541,13 +549,13 @@ export class player extends gameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData("pos", () => this.getPos(),
+        this.addSendingData(sendingDataIds.pos, () => this.getPos(),
         (data, t) => {
             this.setPos(lerp(data.start, data.target, t));
             return t >= 1;
         });
 
-        this.addSendingData("yaw", () => this.mesh.rotation.z,
+        this.addSendingData(sendingDataIds.yaw, () => this.mesh.rotation.z,
         (data, t) => {
             if(!data.formatted)
             {
@@ -559,7 +567,7 @@ export class player extends gameObject
             return t >= 1;
         });
 
-        this.addSendingData("headPitch", () => this.cameraRoot.rotation.x,
+        this.addSendingData(sendingDataIds.headPitch, () => this.cameraRoot.rotation.x,
         (data, t) => {
             if(!data.formatted)
             {
@@ -571,7 +579,7 @@ export class player extends gameObject
             return t >= 1;
         });
 
-        this.addSendingData("red", () => this.red,
+        this.addSendingData(sendingDataIds.red, () => this.red,
         (data) => {
             this.setRed(data.target);
             return true;
@@ -593,12 +601,13 @@ export class player extends gameObject
             this.cameraRoot.add(this.handler.camera);
             this.handler.camera.position.set(0, 0, 0);
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
-            this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, -1, this.height * 1.5)));
+            //this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, -1, this.height * 1.5)));
             this.cameraRoot.remove(this.headMesh);
 
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
                 this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
+                this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
             });
             this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(true));
             this.handler.input.subscribeToButton(this, "r", true, () => this.setRed(false));

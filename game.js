@@ -58,17 +58,13 @@ function loadGame()
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    const sendInterval = 1 / 20; //send online information 20 times per second
-    const sendFullInterval = 1 / 2 //only send full information 2 times per second, otherwise send more compressed delta information
-    let sendTimer = 0;
-    let sendFullTimer = 0;
-    let playerJoined = false;
 
     //handlers and managers
     const input = new GameObject.input(w, h, dpr);
     const multiplayer = new GameObject.multiplayer();
     const handler = new GameObject.handler(scene, camera, ui, ghostUi, meshes, input, multiplayer);
 
+    
     handleWindowResize();
 
 
