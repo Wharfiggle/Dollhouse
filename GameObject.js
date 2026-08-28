@@ -8,12 +8,73 @@ const uiScaleHeight = 1000;
 
 let dpr = window.devicePixelRatio || 1;
 
+//todo change to enum
 const sendingDataIds = {
     pos: 0,
     yaw: 1,
     headPitch: 2,
     red: 3
 };
+//number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
+const flagBytes = Math.ceil((1 + Object.keys(sendingDataIds).length) / 8);
+
+//compression information and methods stored by unit
+//bytes must be a power of 2
+const compression = {
+    "": { //default
+        compress: (v) => v,     //method to compress given value
+        decompress: (v) => v,   //method to decompress given value
+        bytes: 1,               //number of bytes needed to store
+        signed: true,           //does it matter if this unit is negative?
+        delta: false,           //can compressed deltas be calculated and sent most of the time instead of the full value? (should be false if bytes is 1)
+        clamp: false,           //should a value be clamped instead of allowing overflow?
+    },
+    radians: { 
+        compress: (v) => { return Math.round(((v + Math.PI) / (Math.PI * 2)) * 255); },
+        decompress: (v) => { return (v / 255.0) * (Math.PI * 2) - Math.PI; },
+        bytes: 1,
+        signed: false,
+        delta: false,
+        clamp: false
+    },
+    meters: {
+        compress: (v) => { return Math.round(v * 100); },
+        decompress: (v) => { return v / 100; },
+        bytes: 2,
+        signed: true,
+        delta: true,
+        clamp: true
+    }
+}
+
+
+function clampByBytes(value, bytes, signed)
+{
+    const num = Math.pow(2, bytes * 8);
+    if(!signed)
+        return Math.max(0, Math.min(num - 1, value));
+    else
+        return Math.max(-num / 2, Math.min(num / 2 - 1, value));
+}
+
+function subArrays(arr1, arr2)
+{
+    let result = [];
+    for(let i = 0; i < arr1.length; i++)
+    {
+        result.push(arr1[i] - arr2[i]);
+    }
+    return result;
+}
+function addArrays(arr1, arr2)
+{
+    let result = [];
+    for(let i = 0; i < arr1.length; i++)
+    {
+        result.push(arr1[i] + arr2[i]);
+    }
+    return result;
+}
 
 
 function lerp(vec1, vec2, t)
@@ -21,53 +82,6 @@ function lerp(vec1, vec2, t)
     const a = vec1.clone();
     const b = vec2.clone();
     return a.add( b.sub(a).multiplyScalar(t) );
-}
-
-//todo compress numbers
-function deltaArray(arr1, arr2)
-{
-    let result = [];
-    for(let i = 0; i < arr1.length; i++)
-    {
-        if(arr2.length <= i)
-            result.push(arr1); //this shouldnt happen but just in case default to arr1 value if arr2 is shorter than arr1
-        result.push(arr1[i] - arr2[i]);
-    }
-    return result;
-}
-
-//todo compress numbers
-function trimData(data)
-{
-    const x = Object.hasOwn(data, 'x');
-    const y = Object.hasOwn(data, 'y');
-    const z = Object.hasOwn(data, 'z');
-    if(x && y && z)
-        return [data.x, data.y, data.z];
-    else if(x && y)
-        return [data.x, data.y];
-    else
-        return data;
-}
-function untrimData(data)
-{
-    if(Object.hasOwn(data, "length") && data.length > 1)
-    {
-        let allNumbers = true;
-        for(const n of data)
-        {
-            if(!Number.isFinite(n))
-                allNumbers = false;
-        }
-        if(allNumbers)
-        {
-            if(data.length == 3)
-                return new THREE.Vector3(data[0], data[1], data[2]);
-            else if(data.length == 2)
-                return new THREE.Vector2(data[0], data[1]);
-        }
-    }
-    return data;
 }
 
 function worldToScreen(vector3, camera, screenWidth, screenHeight)
@@ -238,23 +252,25 @@ export class gameObject extends EventTarget
                 uTime.value = time;
         });
     }
-    addSendingData(name, getter, catchUp)
+    addSendingData(id, unit, getter, format, catchUp)
     {
-        this.sendingData[name] = { getter: getter };
-        this.catchUpData[name] = { catchUp: catchUp, caughtUp: true, target: null, start: null, timer: 0 };
+        this.sendingData[id] = { getter: getter, unit: unit };
+        this.catchUpData[id] = { catchUp: catchUp, format: format, caughtUp: true, target: null, start: null, timer: 0 };
     }
-    receiveCatchUpData(name, target, full)
+    receiveCatchUpData(id, target, full)
     {
         if(target == null)
-            return console.error("Received null data! Discarding...", name, target);
-        const catchUp = this.catchUpData[name].catchUp;
-        const start = this.sendingData[name].getter();
-        const targ = untrimData(target);
-        this.catchUpData[name] = {
-            catchUp: catchUp,
+            return console.error("Received null data! Discarding...", id, target);
+        const cud = this.catchUpData[id];
+        const sd = this.sendingData[id];
+        const start = sd.getter();
+        const targ = full || !compression[sd.unit].delta ? target : addArrays(start, target);
+        this.catchUpData[id] = {
+            catchUp: cud.catchUp,
+            format: cud.format,
             caughtUp: false,
-            target: full ? targ : (targ instanceof THREE.Vector3 ? start.clone().add(targ) : start + targ),
-            start: start,
+            target: cud.format(targ),
+            start: cud.format(start),
             timer: 0
         };
     }
@@ -274,36 +290,90 @@ export class gameObject extends EventTarget
         if(!this.isLocal)
             return;
 
+        if(all)
+            full = true;
+
+        //collect data that needs to be sent and calculate deltas
         let data = {};
-        let numValues = 0;
+        let anyData = false;
         for(const [key, sd] of Object.entries(this.sendingData))
         {
-            const value = trimData(sd.getter());
-            let lastSent = this.lastSentData[key];
-            if(lastSent == null)
+            const value = sd.getter();
+            const sendDelta = !full && (compression[sd.unit] ?? {}).delta;
+            const lsd = this.lastSentData[key];
+            if(lsd == null) //haven't sent anything yet, send full value even if full is false
             {
                 data[key] = value;
                 this.lastSentData[key] = [value, value];
-                numValues++;
                 full = true;
+                anyData = true;
             }
             else
             {
-                const areArrays = Array.isArray(value) && Array.isArray(lastSent[0]) && Array.isArray(lastSent[1]);
-                if(all || !full || (areArrays ? !value.every((v, i) => v == lastSent[1][i]) : value != lastSent[1])) //uses last actual sent data
+                const lastFull = lsd[0];
+                const lastSent = lsd[1];
+                //only send if value has changed or if all is true
+                if(all || !value.every((v, i) => v == lastSent[i]))
                 {
                     let sentData = value;
-                    if(!full) //send delta
-                        sentData = (areArrays ? deltaArray(value, lastSent[0]) : value - lastSent[0]); //uses last full value
-                    sentData ??= value; //default to full value if delta operations dont work
+                    if(sendDelta)
+                        sentData = subArrays(value, lastFull);
                     data[key] = sentData;
-                    this.lastSentData[key] = [value, sentData]; //full value, actual sent data
-                    numValues++;
+                    this.lastSentData[key] = [value, sentData]; //[full value, actual sent data (can be delta or full)]
+                    anyData = true;
                 }
             }
         }
-        if(numValues > 0)
-            action.send({ ...data, full: full });
+
+        if(anyData)
+        {
+            //make bit field for flags representing full and each sendingDataId present in the sent data
+            const flags = new Uint8Array(flagBytes);
+            flags[0] |= full;
+            for(const [name, id] of Object.entries(sendingDataIds))
+            {
+                if(Object.hasOwn(data, id))
+                    flags[Math.floor((id + 1) / 8)] |= 1 << ((id + 1) % 8);
+            }
+
+            //calculate total bytes needed and store relevant compression objects
+            const dataEntries = Object.entries(data);
+            const dataCompression = {};
+            const dataNumBytes = {};
+            let totalBytes = flags.byteLength;
+            for(const [id, value] of dataEntries)
+            {
+                const comp = compression[this.sendingData[id].unit];
+                dataCompression[id] = comp;
+                const isDelta = !full && comp.delta;
+                const numBytes = isDelta ? comp.bytes / 2 : comp.bytes;
+                dataNumBytes[id] = numBytes;
+                totalBytes += numBytes * value.length;
+            }
+
+            //create buffer, add flags, then add data
+            const buffer = new ArrayBuffer(totalBytes);
+            const view = new DataView(buffer);
+            view["setUint" + (8 * flags.byteLength)](0, flags);
+            let offset = flags.byteLength;
+            for(const [id, value] of dataEntries)
+            {
+                const comp = dataCompression[id];
+                const valueBytes = dataNumBytes[id];
+                const setter = (comp.signed ? "setInt" : "setUint") + (8 * valueBytes);
+                for(let i = 0; i < value.length; i++)
+                {
+                    //clamp so values that are too big to fit in their allocated bytes dont roll over
+                    let compressedValue = comp.compress(value[i]);
+                    if(comp.clamp)
+                        compressedValue = clampByBytes(compressedValue, valueBytes, comp.signed);
+                    view[setter](offset, compressedValue);
+                    offset += valueBytes;
+                }
+            }
+
+            action.send(buffer);
+        }
     }
     setPos(vector3)
     {
@@ -483,13 +553,39 @@ export class multiplayer
             this.removePlayer(peerId);
         };
         this.stateUpdate = this.room.makeAction("stateUpdate");
-        this.stateUpdate.onMessage = (data, { peerId }) => { 
+        this.stateUpdate.onMessage = (update, { peerId }) => { 
             const player = this.getPlayer(peerId);
-            const full = data.full;
-            delete data.full;
-            for(const [key, value] of Object.entries(data))
+
+            //decompress received data
+            const view = new DataView(update.buffer, update.byteOffset, update.byteLength);
+            const flags = view["getUint" + (8 * flagBytes)](0);
+            let offset = flagBytes;
+            const full = flags & 1;
+            let data = {};
+            for(let i = 1; i < 8 * flagBytes; i++)
             {
-                player.receiveCatchUpData(key, value, full);
+                if(flags & Math.pow(2, i))
+                {
+                    const id = i - 1;
+                    const sendingData = player.sendingData[id];
+                    const valLength = sendingData.getter().length;
+                    const comp = compression[sendingData.unit];
+                    const isDelta = !full && comp.delta;
+                    const valueBytes = isDelta ? comp.bytes / 2 : comp.bytes;
+                    const getter = (comp.signed ? "getInt" : "getUint") + (8 * valueBytes);
+                    data[id] = [];
+                    for(let j = 0; j < valLength; j++)
+                    {
+                        data[id].push(comp.decompress(view[getter](offset)));
+                        offset += valueBytes;
+                    }
+                }
+            }
+
+            //send received data to respective player object
+            for(const [id, value] of Object.entries(data))
+            {
+                player.receiveCatchUpData(id, value, full);
             }
         }
     }
@@ -549,41 +645,41 @@ export class player extends gameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData(sendingDataIds.pos, () => this.getPos(),
-        (data, t) => {
-            this.setPos(lerp(data.start, data.target, t));
-            return t >= 1;
-        });
+        this.addSendingData(sendingDataIds.pos, "meters",
+            () => this.getPos().toArray(), 
+            (toFormat) => new THREE.Vector3().fromArray(toFormat),
+            (data, t) => {
+                this.setPos(lerp(data.start, data.target, t));
+                return t >= 1;
+            });
 
-        this.addSendingData(sendingDataIds.yaw, () => this.mesh.rotation.z,
-        (data, t) => {
-            if(!data.formatted)
-            {
-                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, data.start));
-                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, data.target));
-                data.formatted = true;
-            }
-            this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
-            return t >= 1;
-        });
+        this.addSendingData(sendingDataIds.yaw, "radians",
+            () => [this.mesh.rotation.z],
+            (toFormat) => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, toFormat[0])),
+            (data, t) => {
+                if(!data.formatted)
+                {
+                    data.start = this.mesh.quaternion.clone();
+                }
+                this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
+                return t >= 1;
+            });
 
-        this.addSendingData(sendingDataIds.headPitch, () => this.cameraRoot.rotation.x,
-        (data, t) => {
-            if(!data.formatted)
-            {
-                data.start = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.start, 0, 0));
-                data.target = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.target, 0, 0));
-                data.formatted = true;
-            }
-            this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
-            return t >= 1;
-        });
+        this.addSendingData(sendingDataIds.headPitch, "radians",
+            () => [this.cameraRoot.rotation.x],
+            (toFormat) => new THREE.Quaternion().setFromEuler(new THREE.Euler(toFormat[0], 0, 0)),
+            (data, t) => {
+                this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
+                return t >= 1;
+            });
 
-        this.addSendingData(sendingDataIds.red, () => this.red,
-        (data) => {
-            this.setRed(data.target);
-            return true;
-        })
+        this.addSendingData(sendingDataIds.red, "",
+            () => [this.red],
+            (toFormat) => toFormat[0],
+            (data) => {
+                this.setRed(data.target);
+                return true;
+            });
     }
     setRed(red)
     {
