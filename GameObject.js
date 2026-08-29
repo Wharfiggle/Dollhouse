@@ -411,6 +411,7 @@ export class input
     held = [];
     buttonSubscribers = {};
     cursorMoveSubscribers = new Map();
+    prevPos;
     constructor(w, h, dpr)
     {
         this.w = w;
@@ -433,14 +434,8 @@ export class input
         window.addEventListener("keyup", (event) => this.buttonEvent(event, true))
 
         //touch input
-        const handleTouch = (event) =>
-        {
-            event.preventDefault();
-            const touchEvent = event.touches[0];
-            this.cursorMoveEvent(touchEvent);
-        }
-        document.addEventListener("touchmove", handleTouch, { passive: false });
-        document.addEventListener("touchstart", handleTouch, { passive: false });
+        document.addEventListener("touchmove", (event)=>{this.handleTouch(event, false)}, { passive: false });
+        document.addEventListener("touchstart", (event)=>{this.handleTouch(event, true)}, { passive: false });
 
         //receive mouse information from parent page
         window.addEventListener("message", (event) => {
@@ -448,6 +443,12 @@ export class input
                 this.cursorMoveEvent(event.data);
         });
     }
+    handleTouch(event, start)
+{
+    event.preventDefault();
+    const touchEvent = event.touches[0];
+    this.cursorMoveEvent(touchEvent, start);
+}
     buttonEvent(event, released)
     {
         const key = event.key.toLowerCase();
@@ -467,11 +468,14 @@ export class input
             sub.callback();
         }
     }
-    cursorMoveEvent(event)
+    cursorMoveEvent(event, start = false)
     {
         //calculate commonly needed cursor information
         const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
-        const deltaPos = new THREE.Vector2(event.movementX, event.movementY);
+        let deltaPos = new THREE.Vector2();
+        if(!start && this.prevPos != null){
+        deltaPos = pos.clone().sub(this.prevPos)}
+        this.prevPos = pos.clone();
 
         //convert to normalized device coordinates (NDC) (-1 to 1)
         const coord = new THREE.Vector2(
