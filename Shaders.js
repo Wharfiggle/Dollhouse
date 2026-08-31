@@ -42,7 +42,7 @@ export function getMeshes(args)
 {
     const meshes = {
         player: new THREE.Mesh(
-            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.CylinderGeometry(1, 1, 1, 32),
             new THREE.MeshStandardMaterial({ color: "purple" })
         ),
         playerHead: new THREE.Mesh(

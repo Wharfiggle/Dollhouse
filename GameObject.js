@@ -127,13 +127,18 @@ export class handler
     }
     addTag(gameObj, str)
     {
-        if(!gameObj.tags.includes(str))
-            gameObj.tags.push(str);
-        
-        if(!this.tagGroups[str])
-            this.tagGroups[str] = [gameObj];
-        else
-            this.tagGroups[str].push(gameObj);
+        if(gameObj.tags.includes(str))
+            return;
+        gameObj.tags.push(str);
+        this.tagGroups[str] ??= [];
+        this.tagGroups[str].push(gameObj);
+    }
+    removeTag(gameObj, str)
+    {   
+        gameObj.tags.splice(gameObj.tags.indexOf(str), 1);
+        const tg = this.tagGroups[str];
+        if(tg != null)
+            tg.splice(tg.indexOf(gameObj), 1);
     }
     getGroupByTag(str)
     {
@@ -404,6 +409,38 @@ export class gameObject extends EventTarget
     }
 }
 
+export class collisionGameObject extends gameObject
+{
+    collider = {
+        radius: 0,
+        height: 0,
+        pos: new THREE.Vector3(),
+        active: false
+    }
+    constructor(mesh = null, isLocal = true)
+    {
+        super(mesh, isLocal);
+    }
+    setCollider(radius, height, pos, handler = null)
+    {
+        this.collider.radius = radius;
+        this.collider.height = height;
+        this.collider.pos = pos;
+        handler ??= this.handler;
+        if(!this.collider.active)
+            this.setColliderActive(true, handler);
+    }
+    setColliderActive(active, handler = null)
+    {
+        this.collider.active = active;
+        handler ??= this.handler;
+        if(active)
+            handler.addTag(this, "collide");
+        else
+            handler.removeTag(this, "collide");
+    }
+}
+
 export class input
 {
     w = 0;
@@ -627,7 +664,7 @@ export class multiplayer
     }
 }
 
-export class player extends gameObject
+export class player extends collisionGameObject
 {
     cameraRoot = new THREE.Object3D();
     height = 0;
@@ -635,18 +672,25 @@ export class player extends gameObject
     id = 0;
     controlled = false;
     headMesh = null;
+    playerMesh = null;
     red = false;
     constructor(args)
     {
-        super(args.handler.meshes.player, Object.hasOwn(args, "isLocal") ? args.isLocal : true);
+        super(new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
 
-        this.height = this.mesh.geometry.parameters.height;
+        this.playerMesh = args.handler.meshes.player.clone();
+        this.playerMesh.rotateX(Math.PI / 2);
+        this.mesh.add(this.playerMesh);
+        this.height = this.playerMesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.headMesh = args.handler.meshes.playerHead.clone();
         this.cameraRoot.add(this.headMesh);
         this.cameraRoot.position.set(0, 0, this.height * 1.5);
 
-        this.mesh.material = this.mesh.material.clone();
+        this.setCollider(this.playerMesh.geometry.parameters.radiusTop, this.height, new THREE.Vector3(), args.handler);
+        console.log(this.collider);
+
+        this.playerMesh.material = this.playerMesh.material.clone();
         this.headMesh.material = this.headMesh.material.clone();
 
         this.id = args.id ?? 0;
@@ -692,7 +736,7 @@ export class player extends gameObject
             return;
         this.red = red;
         const color = red ? "red" : "purple";
-        this.mesh.material.color.set(color);
+        this.playerMesh.material.color.set(color);
         this.headMesh.material.color.set(color);
     }
     setControlled(controlled)
@@ -702,7 +746,6 @@ export class player extends gameObject
             this.cameraRoot.add(this.handler.camera);
             this.handler.camera.position.set(0, 0, 0);
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
-            //this.cameraRoot.lookAt(this.getPos().add(new THREE.Vector3(0, -1, this.height * 1.5)));
             this.cameraRoot.remove(this.headMesh);
 
             this.handler.input.subscribeToCursorMove(this, (e) => {
