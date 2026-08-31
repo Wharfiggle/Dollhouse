@@ -8,13 +8,14 @@ const uiScaleHeight = 1000;
 
 let dpr = window.devicePixelRatio || 1;
 
-//todo change to enum
+//essentially an enum for sendingDatas
 const sendingDataIds = {
     pos: 0,
     yaw: 1,
     headPitch: 2,
     red: 3
 };
+
 //number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
 const flagBytes = Math.ceil((1 + Object.keys(sendingDataIds).length) / 8);
 
@@ -665,10 +666,6 @@ export class player extends gameObject
             () => [this.mesh.rotation.z],
             (toFormat) => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, toFormat[0])),
             (data, t) => {
-                if(!data.formatted)
-                {
-                    data.start = this.mesh.quaternion.clone();
-                }
                 this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
                 return t >= 1;
             });
