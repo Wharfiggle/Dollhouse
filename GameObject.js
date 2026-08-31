@@ -411,7 +411,7 @@ export class input
     held = [];
     buttonSubscribers = {};
     cursorMoveSubscribers = new Map();
-    prevPos;
+    prevTouch = new THREE.Vector2();
     constructor(w, h, dpr)
     {
         this.w = w;
@@ -434,8 +434,20 @@ export class input
         window.addEventListener("keyup", (event) => this.buttonEvent(event, true))
 
         //touch input
-        document.addEventListener("touchmove", (event)=>{this.handleTouch(event, false)}, { passive: false });
-        document.addEventListener("touchstart", (event)=>{this.handleTouch(event, true)}, { passive: false });
+        document.addEventListener("touchstart", (event) => {
+            event.preventDefault();
+            const touchEvent = event.touches[0];
+            this.prevTouch = new THREE.Vector2(touchEvent.clientX, touchEvent.clientY);
+            this.cursorMoveEvent(touchEvent);
+        }, { passive: false });
+        document.addEventListener("touchmove", (event) => {
+            event.preventDefault();
+            const touchEvent = event.touches[0];
+            const pos = new THREE.Vector2(touchEvent.clientX, touchEvent.clientY);
+            const deltaPos = pos.clone().sub(this.prevTouch)
+            this.prevTouch = pos.clone();
+            this.cursorMoveEvent(touchEvent, deltaPos);
+        }, { passive: false });
 
         //receive mouse information from parent page
         window.addEventListener("message", (event) => {
@@ -443,12 +455,6 @@ export class input
                 this.cursorMoveEvent(event.data);
         });
     }
-    handleTouch(event, start)
-{
-    event.preventDefault();
-    const touchEvent = event.touches[0];
-    this.cursorMoveEvent(touchEvent, start);
-}
     buttonEvent(event, released)
     {
         const key = event.key.toLowerCase();
@@ -468,14 +474,12 @@ export class input
             sub.callback();
         }
     }
-    cursorMoveEvent(event, start = false)
+    cursorMoveEvent(event, deltaPos = null)
     {
         //calculate commonly needed cursor information
         const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
-        let deltaPos = new THREE.Vector2();
-        if(!start && this.prevPos != null){
-        deltaPos = pos.clone().sub(this.prevPos)}
-        this.prevPos = pos.clone();
+        if(deltaPos == null)
+            deltaPos = new THREE.Vector2(event.movementX, event.movementY);
 
         //convert to normalized device coordinates (NDC) (-1 to 1)
         const coord = new THREE.Vector2(
