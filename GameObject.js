@@ -103,6 +103,11 @@ export class handler
     camera = null;
     input = null;
     multiplayer = null;
+    //todo, store colliders in here and only check for collisions with colliders that share a sector
+    colliders = {
+        gameObjects: [],
+        cellSize: 2.0
+    }
     constructor(scene, camera, ui, ghostUi, meshes, input, multiplayer)
     {
         this.scene = scene;
@@ -185,6 +190,7 @@ export class handler
         {
             go.tick(dt, time);
         }
+
         for(const go of this.nonLocalGameObjects)
         {
             go.catchUp(this.multiplayer.sendInterval, dt, time);
@@ -207,6 +213,17 @@ export class handler
             this.gameObjects.unshift(ugo);
         }
         this.unshiftGameObjects = [];
+
+        //check each unique pairing of active collisionGameObjects for collisions and resolve them
+        const numColliders = this.colliders.gameObjects.length;
+        for(let i = 0; i < numColliders; i++)
+        {
+            const cgo = this.colliders.gameObjects[i];
+            for(let j = i + 1; j < numColliders; j++)
+            {
+                cgo.checkForCollision(this.colliders.gameObjects[j]);
+            }
+        }
     }
     send(action, full, all)
     {
@@ -415,6 +432,7 @@ export class collisionGameObject extends gameObject
         radius: 0,
         height: 0,
         pos: new THREE.Vector3(),
+        static: false,
         active: false
     }
     constructor(mesh = null, isLocal = true)
@@ -430,15 +448,79 @@ export class collisionGameObject extends gameObject
         if(!this.collider.active)
             this.setColliderActive(true, handler);
     }
+    setColliderStatic(s) { this.collider.static = s; }
     setColliderActive(active, handler = null)
     {
         this.collider.active = active;
         handler ??= this.handler;
         if(active)
-            handler.addTag(this, "collide");
+            handler.colliders.gameObjects.push(this);
         else
-            handler.removeTag(this, "collide");
+            handler.colliders.splice(handler.colliders.indexOf(this), 1);
     }
+    checkForCollision(gameObj)
+    {
+        //no collision resolution possible if both colliders are static
+        if(this.collider.static && gameObj.collider.static)
+            return;
+
+        //see if heights intersect
+        const myPos = this.getPos().add(this.collider.pos);
+        const myHalfHeight = this.collider.height / 2;
+        const myBottom = myPos.z - myHalfHeight;
+        const myTop = myPos.z + myHalfHeight;
+        const yourPos = gameObj.getPos().add(gameObj.collider.pos);
+        const yourHalfHeight = gameObj.collider.height / 2;
+        const yourBottom = yourPos.z - yourHalfHeight;
+        const yourTop = yourPos.z + yourHalfHeight;
+
+        const verticalOverlap = myPos.z < yourPos.z ? myTop - yourBottom : yourTop - myBottom;
+        if(verticalOverlap <= 0)
+            return; //heights do not intersect
+
+        //see if radii intersect
+        const minDist = this.collider.radius + gameObj.collider.radius;
+        const horizontalOverlap = minDist - new THREE.Vector2(myPos.x, myPos.y).sub(new THREE.Vector2(yourPos.x, yourPos.y)).length();
+        if(horizontalOverlap > 0)
+        {
+            //resolve collision through either vertical vs horizontal overlap, whichever is smaller
+            const overlap = Math.min(verticalOverlap, horizontalOverlap);
+            if(verticalOverlap < horizontalOverlap)
+            {
+                myPos.set(0, 0, myPos.z);
+                yourPos.set(0, 0, yourPos.z);
+            }
+            else
+            {
+                myPos.set(myPos.x, myPos.y, 0);
+                yourPos.set(yourPos.x, yourPos.y, 0);
+            }
+            const diff = yourPos.sub(myPos);
+            const dir = diff.clone().normalize();
+            if(gameObj.collider.static)
+            {
+                const correction = dir.clone().multiplyScalar(-overlap);
+                this.addPos(correction);
+                this.onCollision(correction);
+            }
+            else if(this.collider.static)
+            {
+                const correction = dir.clone().multiplyScalar(overlap);
+                gameObj.addPos(correction);
+                gameObj.onCollision(correction);
+            }
+            else
+            {
+                let correction = dir.clone().multiplyScalar(-overlap / 2);
+                this.addPos(correction);
+                this.onCollision(correction);
+                correction = dir.clone().multiplyScalar(overlap / 2);
+                gameObj.addPos(correction);
+                gameObj.onCollision(correction);
+            }
+        }
+    }
+    onCollision(correction){}
 }
 
 export class input
@@ -688,7 +770,6 @@ export class player extends collisionGameObject
         this.cameraRoot.position.set(0, 0, this.height * 1.5);
 
         this.setCollider(this.playerMesh.geometry.parameters.radiusTop, this.height, new THREE.Vector3(), args.handler);
-        console.log(this.collider);
 
         this.playerMesh.material = this.playerMesh.material.clone();
         this.headMesh.material = this.headMesh.material.clone();
@@ -755,6 +836,10 @@ export class player extends collisionGameObject
             });
             this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(true));
             this.handler.input.subscribeToButton(this, "r", true, () => this.setRed(false));
+            this.handler.input.subscribeToButton(this, " ", false, () => {
+                const pos = this.getPos();
+                this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
+            });
         }
         else
         {
