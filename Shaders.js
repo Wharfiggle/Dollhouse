@@ -43,15 +43,19 @@ export function getMeshes(args)
     const meshes = {
         player: new THREE.Mesh(
             new THREE.CylinderGeometry(1, 1, 1, 32),
-            new THREE.MeshStandardMaterial({ color: "purple" })
+            new THREE.MeshStandardMaterial({ color:"purple" })
         ),
         playerHead: new THREE.Mesh(
             new THREE.ConeGeometry(0.25, 0.5, 4),
-            new THREE.MeshStandardMaterial({ color: "purple" })
+            new THREE.MeshStandardMaterial({ color:"purple" })
         ),
         ground: new THREE.Mesh(
             new THREE.PlaneGeometry(20, 20),
-            new THREE.MeshStandardMaterial({ color:"white", side: THREE.DoubleSide })
+            new THREE.MeshStandardMaterial({ color:"white", side:THREE.DoubleSide })
+        ),
+        placedDoll: new THREE.Mesh(
+            new THREE.CylinderGeometry(1, 1, 1, 32),
+            new THREE.MeshStandardMaterial({ transparent: true, color: "purple", opacity: 0.5 })
         )
     }
 

@@ -14,7 +14,8 @@ const sendingDataIds = {
     z: 1,
     yaw: 2,
     headPitch: 3,
-    red: 4
+    red: 4,
+    placedDollPos: 5
 };
 
 //number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
@@ -47,7 +48,7 @@ const compression = {
         delta: true,
         clamp: true
     },
-    metersFast: {
+    metersNoDelta: {
         compress: (v) => { return Math.round(v * 100); },
         decompress: (v) => { return v / 100; },
         bytes: 2,
@@ -322,6 +323,11 @@ export class gameObject extends EventTarget
         for(const [key, sd] of Object.entries(this.sendingData))
         {
             const value = sd.getter();
+            if(value == null || value.length == 0 || value[0] == null)
+            {
+                this.lastSentData[key] = [[],[]];
+                continue;
+            }
             const comp = compression[sd.unit];
             const sendDelta = !full && comp.delta;
             const lsd = this.lastSentData[key];
@@ -686,6 +692,7 @@ export class multiplayer
     players = {};
     controlledPlayerId = -1;
     playerJoined = false;
+    placedDoll;
     init(handler)
     {
         this.handler = handler;
@@ -758,6 +765,7 @@ export class multiplayer
     addPlayer(obj, id) { this.players[id] = obj; }
     removePlayer(id) { delete this.players[id]; }
     getPlayer(id) { return this.players[id]; }
+    getControlledPlayer() { return this.players[this.controlledPlayerId]; }
     setControlledPlayer(id)
     {
         if(this.controlledPlayerId != id && this.controlledPlayerId != -1)
@@ -808,7 +816,7 @@ export class player extends collisionGameObject
                 return t >= 1;
             });
 
-        this.addSendingData(sendingDataIds.z, "metersFast",
+        this.addSendingData(sendingDataIds.z, "metersNoDelta",
             () => [this.getPos().z], 
             (toFormat) => toFormat[0],
             (data, t) => {
@@ -839,6 +847,19 @@ export class player extends collisionGameObject
                 this.setRed(data.target);
                 return true;
             });
+
+        this.addSendingData(sendingDataIds.placedDollPos, "metersNoDelta",
+            () => {
+                const result = this.placedDoll == null ? [null, null, null] : this.placedDoll.getPos().toArray();
+                this.placedDoll = null;
+                return result;
+            },
+            (toFormat) => { return toFormat[0] == null ? null : new THREE.Vector3(toFormat[0], toFormat[1], toFormat[2]); },
+            (data) => {
+                this.handler.newGameObject(placedDoll, { pos: data.target, isLocal: false });
+                return true;
+            }
+        )
     }
     setRed(red)
     {
@@ -870,6 +891,9 @@ export class player extends collisionGameObject
                 const pos = this.getPos();
                 this.gravity = 0;
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
+            });
+            this.handler.input.subscribeToButton(this, "e", false, () => {
+                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), isLocal: true });
             });
         }
         else
@@ -923,6 +947,31 @@ export class player extends collisionGameObject
     {
         if(correction.z > 0)
             this.gravity = 0;
+    }
+}
+
+export class placedDoll extends collisionGameObject
+{
+    activePlayer;
+    solid = false;
+    constructor(args)
+    {
+        super(args.handler.meshes.player, args.isLocal);
+        this.activePlayer = args.handler.multiplayer.getControlledPlayer();
+        this.mesh.rotateX(Math.PI / 2);
+        this.mesh.material = args.handler.meshes.placedDoll.material;
+        this.setPos(args.pos);
+        this.setCollider(1, 1, new THREE.Vector3(), true, args.handler);
+        this.setColliderActive(false, args.handler);
+    }
+    tick(dt, time)
+    {
+        if(!this.solid && !this.checkForCollision(this.activePlayer))
+        {
+            this.solid = true;
+            this.setColliderActive(true);
+            this.mesh.material = this.handler.meshes.player.material;
+        }
     }
 }
 
