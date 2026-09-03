@@ -10,10 +10,11 @@ let dpr = window.devicePixelRatio || 1;
 
 //essentially an enum for sendingDatas
 const sendingDataIds = {
-    pos: 0,
-    yaw: 1,
-    headPitch: 2,
-    red: 3
+    xy: 0,
+    z: 1,
+    yaw: 2,
+    headPitch: 3,
+    red: 4
 };
 
 //number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
@@ -44,6 +45,14 @@ const compression = {
         bytes: 2,
         signed: true,
         delta: true,
+        clamp: true
+    },
+    metersFast: {
+        compress: (v) => { return Math.round(v * 100); },
+        decompress: (v) => { return v / 100; },
+        bytes: 2,
+        signed: true,
+        delta: false,
         clamp: true
     }
 }
@@ -78,12 +87,13 @@ function addArrays(arr1, arr2)
 }
 
 
-function lerp(vec1, vec2, t)
+function lerpVec(vec1, vec2, t)
 {
     const a = vec1.clone();
     const b = vec2.clone();
     return a.add( b.sub(a).multiplyScalar(t) );
 }
+function lerp(a, b, t) { return a + (b - a) * t; }
 
 function worldToScreen(vector3, camera, screenWidth, screenHeight)
 {
@@ -105,7 +115,8 @@ export class handler
     multiplayer = null;
     //todo, store colliders in here and only check for collisions with colliders that share a sector
     colliders = {
-        gameObjects: [],
+        statics: [],
+        nonStatics: [],
         cellSize: 2.0
     }
     constructor(scene, camera, ui, ghostUi, meshes, input, multiplayer)
@@ -213,17 +224,6 @@ export class handler
             this.gameObjects.unshift(ugo);
         }
         this.unshiftGameObjects = [];
-
-        //check each unique pairing of active collisionGameObjects for collisions and resolve them
-        const numColliders = this.colliders.gameObjects.length;
-        for(let i = 0; i < numColliders; i++)
-        {
-            const cgo = this.colliders.gameObjects[i];
-            for(let j = i + 1; j < numColliders; j++)
-            {
-                cgo.checkForCollision(this.colliders.gameObjects[j]);
-            }
-        }
     }
     send(action, full, all)
     {
@@ -322,7 +322,8 @@ export class gameObject extends EventTarget
         for(const [key, sd] of Object.entries(this.sendingData))
         {
             const value = sd.getter();
-            const sendDelta = !full && (compression[sd.unit] ?? {}).delta;
+            const comp = compression[sd.unit];
+            const sendDelta = !full && comp.delta;
             const lsd = this.lastSentData[key];
             if(lsd == null) //haven't sent anything yet, send full value even if full is false
             {
@@ -435,35 +436,56 @@ export class collisionGameObject extends gameObject
         static: false,
         active: false
     }
-    constructor(mesh = null, isLocal = true)
-    {
-        super(mesh, isLocal);
-    }
-    setCollider(radius, height, pos, handler = null)
+    prevPos = new THREE.Vector3();
+    groundLevel = 0;
+    setCollider(radius, height, pos, isStatic, handler = null)
     {
         this.collider.radius = radius;
         this.collider.height = height;
         this.collider.pos = pos;
         handler ??= this.handler;
+        this.setColliderStatic(isStatic, handler);
         if(!this.collider.active)
             this.setColliderActive(true, handler);
     }
-    setColliderStatic(s) { this.collider.static = s; }
+    setColliderStatic(s, handler)
+    {
+        if(this.collider.active)
+        {
+            this.setColliderActive(false, handler);
+            this.collider.static = s;
+            this.setColliderActive(true, handler);
+        }
+        else
+            this.collider.static = s;
+    }
     setColliderActive(active, handler = null)
     {
+        if(active == this.collider.active)
+            return;
         this.collider.active = active;
         handler ??= this.handler;
+        const arr = this.collider.static ? handler.colliders.statics : handler.colliders.nonStatics;
         if(active)
-            handler.colliders.gameObjects.push(this);
+            arr.push(this);
         else
-            handler.colliders.splice(handler.colliders.indexOf(this), 1);
+            arr.splice(arr.indexOf(this), 1);
+    }
+    tick(dt, time)
+    {
+        super.tick(dt, time);
+
+        if(this.getPos().sub(this.prevPos).length() > 0)
+        {
+            for(const s of this.handler.colliders.statics)
+            {
+                this.resolveCollision(this.checkForCollision(s));
+            }
+            this.prevPos.copy(this.getPos());
+        }
     }
     checkForCollision(gameObj)
     {
-        //no collision resolution possible if both colliders are static
-        if(this.collider.static && gameObj.collider.static)
-            return;
-
         //see if heights intersect
         const myPos = this.getPos().add(this.collider.pos);
         const myHalfHeight = this.collider.height / 2;
@@ -476,51 +498,50 @@ export class collisionGameObject extends gameObject
 
         const verticalOverlap = myPos.z < yourPos.z ? myTop - yourBottom : yourTop - myBottom;
         if(verticalOverlap <= 0)
-            return; //heights do not intersect
+            return false; //heights do not intersect
 
         //see if radii intersect
         const minDist = this.collider.radius + gameObj.collider.radius;
         const horizontalOverlap = minDist - new THREE.Vector2(myPos.x, myPos.y).sub(new THREE.Vector2(yourPos.x, yourPos.y)).length();
         if(horizontalOverlap > 0)
-        {
-            //resolve collision through either vertical vs horizontal overlap, whichever is smaller
-            const overlap = Math.min(verticalOverlap, horizontalOverlap);
-            if(verticalOverlap < horizontalOverlap)
-            {
-                myPos.set(0, 0, myPos.z);
-                yourPos.set(0, 0, yourPos.z);
-            }
-            else
-            {
-                myPos.set(myPos.x, myPos.y, 0);
-                yourPos.set(yourPos.x, yourPos.y, 0);
-            }
-            const diff = yourPos.sub(myPos);
-            const dir = diff.clone().normalize();
-            if(gameObj.collider.static)
-            {
-                const correction = dir.clone().multiplyScalar(-overlap);
-                this.addPos(correction);
-                this.onCollision(correction);
-            }
-            else if(this.collider.static)
-            {
-                const correction = dir.clone().multiplyScalar(overlap);
-                gameObj.addPos(correction);
-                gameObj.onCollision(correction);
-            }
-            else
-            {
-                let correction = dir.clone().multiplyScalar(-overlap / 2);
-                this.addPos(correction);
-                this.onCollision(correction);
-                correction = dir.clone().multiplyScalar(overlap / 2);
-                gameObj.addPos(correction);
-                gameObj.onCollision(correction);
-            }
-        }
+            return { horizontalOverlap: horizontalOverlap, verticalOverlap: verticalOverlap, myPos: myPos, yourPos: yourPos, myBottom: myBottom };
+        else
+            return false;
+    }
+    resolveCollision(args)
+    {
+        if(!args)
+            return;
+
+        //resolve collision through either vertical or horizontal overlap
+        const useVertical = args.useHorizontal ? false : args.verticalOverlap < args.horizontalOverlap;
+        const diff = useVertical ? new THREE.Vector3(0, 0, args.myPos.z - args.yourPos.z) : new THREE.Vector3(args.myPos.x - args.yourPos.x, args.myPos.y - args.yourPos.y, 0);
+        const dir = diff.clone().normalize();
+
+        //assume gameObj is static and we are not
+        const correction = dir.clone().multiplyScalar(useVertical ? args.verticalOverlap : args.horizontalOverlap);
+        
+        //if correction would ever put us below ground level, dont do it and instead use horizontal displacement
+        if(useVertical && correction.z + args.myBottom < this.groundLevel)
+            return this.resolveCollision({ ...args, useHorizontal: true });
+        
+        this.addPos(correction);
+        this.onCollision(correction);
     }
     onCollision(correction){}
+}
+
+export class basicCollider extends collisionGameObject
+{
+    constructor(args)
+    {
+        super(new THREE.Mesh(new THREE.CylinderGeometry(args.radius, args.radius, args.height, 32), new THREE.MeshStandardMaterial({color:"black"})));
+        this.setCollider(args.radius, args.height, new THREE.Vector3(), true, args.handler);
+        const pos = args.startPos ?? args.pos;
+        if(pos != null)
+            this.setPos(pos);
+        this.mesh.rotateX(Math.PI / 2);
+    }
 }
 
 export class input
@@ -656,7 +677,7 @@ export class input
 export class multiplayer
 {
     sendInterval = 1 / 20; //period at which delta data is sent (more compressed)
-    sendFullInterval = 1 / 2; //period at which full data is sent
+    sendFullInterval = 1; //period at which full data is sent
     sendTimer = 0;
     sendFullTimer = 0;
     room;
@@ -756,6 +777,7 @@ export class player extends collisionGameObject
     headMesh = null;
     playerMesh = null;
     red = false;
+    gravity = 0;
     constructor(args)
     {
         super(new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
@@ -769,8 +791,6 @@ export class player extends collisionGameObject
         this.cameraRoot.add(this.headMesh);
         this.cameraRoot.position.set(0, 0, this.height * 1.5);
 
-        this.setCollider(this.playerMesh.geometry.parameters.radiusTop, this.height, new THREE.Vector3(), args.handler);
-
         this.playerMesh.material = this.playerMesh.material.clone();
         this.headMesh.material = this.headMesh.material.clone();
 
@@ -779,11 +799,20 @@ export class player extends collisionGameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
-        this.addSendingData(sendingDataIds.pos, "meters",
-            () => this.getPos().toArray(), 
-            (toFormat) => new THREE.Vector3().fromArray(toFormat),
+        this.addSendingData(sendingDataIds.xy, "meters",
+            () => [this.pos.x, this.pos.y], 
+            (toFormat) => new THREE.Vector2().fromArray(toFormat),
             (data, t) => {
-                this.setPos(lerp(data.start, data.target, t));
+                const xy = lerpVec(data.start, data.target, t);
+                this.setPos(new THREE.Vector3(xy.x, xy.y, this.pos.z));
+                return t >= 1;
+            });
+
+        this.addSendingData(sendingDataIds.z, "metersFast",
+            () => [this.getPos().z], 
+            (toFormat) => toFormat[0],
+            (data, t) => {
+                this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, lerp(data.start, data.target, t)));
                 return t >= 1;
             });
 
@@ -829,15 +858,17 @@ export class player extends collisionGameObject
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
             this.cameraRoot.remove(this.headMesh);
 
+            this.setCollider(this.playerMesh.geometry.parameters.radiusTop, this.height, new THREE.Vector3(), false, this.handler);
+
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
                 this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
                 this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
             });
-            this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(true));
-            this.handler.input.subscribeToButton(this, "r", true, () => this.setRed(false));
+            this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(!this.red));
             this.handler.input.subscribeToButton(this, " ", false, () => {
                 const pos = this.getPos();
+                this.gravity = 0;
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
             });
         }
@@ -849,36 +880,49 @@ export class player extends collisionGameObject
     }
     tick(dt, time)
     {
-        super.tick();
+        if(!this.isLocal)
+            return;
 
-        if(this.isLocal)
+        //calculate movement direction
+        const moveInput = new THREE.Vector2();
+        if(this.handler.input.isHeld('w')) moveInput.y += 1;
+        if(this.handler.input.isHeld('s')) moveInput.y -= 1;
+        if(this.handler.input.isHeld('d')) moveInput.x += 1;
+        if(this.handler.input.isHeld('a')) moveInput.x -= 1;
+        if(moveInput.length() > 0)
         {
-            //calculate movement direction
-            const moveInput = new THREE.Vector2();
-            if(this.handler.input.isHeld('w')) moveInput.y += 1;
-            if(this.handler.input.isHeld('s')) moveInput.y -= 1;
-            if(this.handler.input.isHeld('d')) moveInput.x += 1;
-            if(this.handler.input.isHeld('a')) moveInput.x -= 1;
-            if(moveInput.length() > 0)
-            {
-                const pos = this.getPos();
-                const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
-                forwardVector.applyQuaternion(this.mesh.quaternion);
-                const ang = Math.atan2(moveInput.y, moveInput.x) - Math.PI / 2;
-                //rotate forwardVector by angle of moveInput to get movement direction
-                const movement = new THREE.Vector3(
-                    Math.cos(ang) * forwardVector.x - Math.sin(ang) * forwardVector.y,
-                    Math.sin(ang) * forwardVector.x + Math.cos(ang) * forwardVector.y,
-                    0
-                )
+            const pos = this.getPos();
+            const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
+            forwardVector.applyQuaternion(this.mesh.quaternion);
+            const ang = Math.atan2(moveInput.y, moveInput.x) - Math.PI / 2;
+            //rotate forwardVector by angle of moveInput to get movement direction
+            const movement = new THREE.Vector3(
+                Math.cos(ang) * forwardVector.x - Math.sin(ang) * forwardVector.y,
+                Math.sin(ang) * forwardVector.x + Math.cos(ang) * forwardVector.y,
+                0
+            )
 
-                this.setPos(pos.add(movement.multiplyScalar(this.speed * dt)));
-            }
+            this.setPos(pos.add(movement.multiplyScalar(this.speed * dt)));
         }
 
         //gravity
-        let pos = this.getPos();
-        this.setPos(new THREE.Vector3(pos.x, pos.y, Math.max(this.height, pos.z - 9.8 * dt)));
+        const groundedZ = this.groundLevel + this.height / 2;
+        if(this.pos.z > groundedZ)
+        {
+            this.gravity += 1 * dt;
+            const newZ = Math.max(groundedZ, this.pos.z - this.gravity);
+            this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
+
+            if(this.pos.z <= groundedZ)
+                this.gravity = 0;
+        }
+
+        super.tick();
+    }
+    onCollision(correction)
+    {
+        if(correction.z > 0)
+            this.gravity = 0;
     }
 }
 

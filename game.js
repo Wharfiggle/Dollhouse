@@ -71,6 +71,7 @@ function loadGame()
     //game objects
     handler.newGameObject(GameObject.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
     multiplayer.setControlledPlayer(0);
+    handler.newGameObject(GameObject.basicCollider, { height: 2, radius: 1, pos: new THREE.Vector3(0, 4, 1) });
     
     handler.newGameObject(GameObject.ground);
 
