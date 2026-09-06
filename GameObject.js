@@ -2,8 +2,6 @@ import * as THREE from "three";
 import { joinRoom } from "trystero";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
 
-const modelLoader = new GLTFLoader();
-
 const uiScaleHeight = 1000;
 
 let dpr = window.devicePixelRatio || 1;
@@ -104,43 +102,97 @@ function worldToScreen(vector3, camera, screenWidth, screenHeight)
 
 export class handler
 {
+    //todo, only check for collisions with colliders in surrounding cells
+    colliders = {
+        statics: [],
+        nonStatics: [],
+        cellSize: 2.0
+    }
+    preloadMeshes = [ "./StumpyMannequin.glb" ];
+    modelLoader = new GLTFLoader();
+    meshes = {};
+    meshAnimationData = {};
+    meshSubscribers = {};
     gameObjects = [];
     localGameObjects = [];
     nonLocalGameObjects = [];
     removeGameObjects = [];
     unshiftGameObjects = []; //used for adding gameObjects to the start of the list, useful for affecting draw order for ui
     tagGroups = {};
-    meshes = {};
+    materials = {};
     camera = null;
     input = null;
     multiplayer = null;
-    //todo, store colliders in here and only check for collisions with colliders that share a sector
-    colliders = {
-        statics: [],
-        nonStatics: [],
-        cellSize: 2.0
-    }
-    constructor(scene, camera, ui, ghostUi, meshes, input, multiplayer)
+    constructor(scene, camera, ui, ghostUi, materials, input, multiplayer)
     {
         this.scene = scene;
         this.ui = ui;
         this.ghostUi = ghostUi;
-        this.meshes = meshes;
+        this.materials = materials;
         this.camera = camera;
         this.input = input;
         this.multiplayer = multiplayer;
 
         this.multiplayer.init(this);
 
-        //preload meshes and keep in memory to prevent lag spikes on spawns
-        for(const [key, mesh] of Object.entries(meshes))
+        this.meshes = {
+            playerHead: new THREE.Mesh(
+                new THREE.ConeGeometry(0.25, 0.5, 4),
+                materials.player
+            ),
+            ground: new THREE.Mesh(
+                new THREE.PlaneGeometry(20, 20),
+                materials.ground
+            )
+        };
+
+        for(const filePath of this.preloadMeshes)
         {
-            const copy = mesh.clone();
-            copy.scale.setScalar(0);
-            scene.add(copy);
+            this.loadMesh(filePath);
         }
+    }
+    loadMesh(filePath)
+    {
+        this.modelLoader.load(
+            filePath,
+            (gltf) => {
+                let mesh;
+                gltf.scene.traverse((child) => {
+                    if(child.isMesh)
+                        mesh = new THREE.Mesh(child.geometry, new THREE.MeshStandardMaterial());
+                });
 
+                const animationMixer = new THREE.AnimationMixer(gltf.scene);
+                const animations = gltf.animations;
 
+                this.meshes[filePath] = mesh;
+                this.meshAnimationData[filePath] = { animationMixer: animationMixer, animations: animations };
+                
+                const entries = this.meshSubscribers[filePath];
+                for(const callback of entries)
+                {
+                    callback(mesh.clone(), animationMixer, animations);
+                }
+                delete this.meshSubscribers[filePath];
+            }
+        );
+    }
+    requestMesh(filePath, callback)
+    {
+        const entry = this.meshes[filePath];
+        if(entry)
+        {
+            const animationData = this.meshAnimationData[filePath];
+            callback(entry.clone(), animationData.animationMixer, animationData.animations);
+        }
+        else
+        {
+            this.meshSubscribers[filePath] ??= [];
+            const subs = this.meshSubscribers[filePath];
+            if(subs.length == 0 && !this.preloadMeshes.includes(filePath))
+                this.loadMesh(filePath);
+            subs.push(callback);
+        }
     }
     addTag(gameObj, str)
     {
@@ -425,6 +477,7 @@ export class gameObject extends EventTarget
         const prevMesh = this.mesh;
         this.mesh = mesh.clone();
         this.mesh.position.copy(this.pos);
+        this.mesh.rotation.copy(prevMesh.rotation);
         if(this.handler)
         {
             this.handler.scene.remove(prevMesh);
@@ -777,9 +830,15 @@ export class multiplayer
 
 export class player extends collisionGameObject
 {
-    cameraRoot = new THREE.Object3D();
-    height = 0;
+    height = 3.5;
     speed = 3;
+    poses = {
+        Stand: {},
+        TPose: {},
+        Droop: {}
+    };
+    animationMixer = null;
+    cameraRoot = new THREE.Object3D();
     id = 0;
     controlled = false;
     headMesh = null;
@@ -790,17 +849,29 @@ export class player extends collisionGameObject
     {
         super(new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
 
-        this.playerMesh = args.handler.meshes.player.clone();
-        this.playerMesh.rotateX(Math.PI / 2);
-        this.mesh.add(this.playerMesh);
-        this.height = this.playerMesh.geometry.parameters.height;
         this.mesh.add(this.cameraRoot);
         this.headMesh = args.handler.meshes.playerHead.clone();
-        this.cameraRoot.add(this.headMesh);
-        this.cameraRoot.position.set(0, 0, this.height * 1.5);
-
-        this.playerMesh.material = this.playerMesh.material.clone();
         this.headMesh.material = this.headMesh.material.clone();
+        this.cameraRoot.add(this.headMesh);
+        this.cameraRoot.position.set(0, -this.height * 0.75, this.height * 1.25);
+
+        this.handler = args.handler;
+        args.handler.requestMesh("./StumpyMannequin.glb", (mesh, animationMixer, animations) => {
+            this.playerMesh = mesh.clone();
+            this.playerMesh.material = this.handler.materials.player.clone();
+            this.mesh.add(this.playerMesh);
+            this.playerMesh.rotateZ(Math.PI);
+
+            this.animationMixer = animationMixer;
+            for(const key of Object.keys(this.poses))
+            {
+                const clip = THREE.AnimationClip.findByName(animations, key);
+                this.poses[key].action = this.animationMixer.clipAction(clip);
+                this.poses[key].action.setLoop(THREE.LoopRepeat);
+            }
+            //todo fix poses not playing, nothing seems to be wrong with the code after vigorous testing probably something wrong with the model
+            this.poses.Stand.action.play();
+        });
 
         this.id = args.id ?? 0;
         args.handler.multiplayer.addPlayer(this, this.id);
@@ -879,7 +950,7 @@ export class player extends collisionGameObject
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
             this.cameraRoot.remove(this.headMesh);
 
-            this.setCollider(this.playerMesh.geometry.parameters.radiusTop, this.height, new THREE.Vector3(), false, this.handler);
+            this.setCollider(0.3, this.height, new THREE.Vector3(0, 0, this.height / 2), false, this.handler);
 
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
@@ -904,6 +975,9 @@ export class player extends collisionGameObject
     }
     tick(dt, time)
     {
+        if(this.animationMixer)
+            this.animationMixer.update(dt);
+
         if(!this.isLocal)
             return;
 
@@ -930,7 +1004,7 @@ export class player extends collisionGameObject
         }
 
         //gravity
-        const groundedZ = this.groundLevel + this.height / 2;
+        const groundedZ = this.groundLevel;
         if(this.pos.z > groundedZ)
         {
             this.gravity += 1 * dt;
@@ -956,13 +1030,17 @@ export class placedDoll extends collisionGameObject
     solid = false;
     constructor(args)
     {
-        super(args.handler.meshes.player, args.isLocal);
+        super(new THREE.Object3D(), args.isLocal);
         this.activePlayer = args.handler.multiplayer.getControlledPlayer();
-        this.mesh.rotateX(Math.PI / 2);
-        this.mesh.material = args.handler.meshes.placedDoll.material;
         this.setPos(args.pos);
-        this.setCollider(1, 1, new THREE.Vector3(), true, args.handler);
+        this.setCollider(0.3, 3.5, new THREE.Vector3(), true, args.handler);
         this.setColliderActive(false, args.handler);
+
+        this.handler = args.handler;
+        this.handler.requestMesh("./StumpyMannequin.glb", (mesh) => {
+            this.setMesh(mesh);
+            this.mesh.material = args.handler.materials.placedDoll;
+        });
     }
     tick(dt, time)
     {
@@ -970,7 +1048,7 @@ export class placedDoll extends collisionGameObject
         {
             this.solid = true;
             this.setColliderActive(true);
-            this.mesh.material = this.handler.meshes.player.material;
+            this.mesh.material = this.handler.materials.player;
         }
     }
 }

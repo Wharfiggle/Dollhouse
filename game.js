@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import * as GameObject from "./GameObject.js";
-import { getMeshes } from "./Shaders.js";
+import { getMaterials } from "./Shaders.js";
 
 window.addEventListener("load", () => {
     if("requestIdleCallback" in window)
@@ -16,9 +16,9 @@ function loadGame()
 {
     let dpr = window.devicePixelRatio || 1;
 
-    //set up meshes with params from url
+    //set up materials with params from url
     const urlParams = Object.fromEntries(new URLSearchParams(window.location.search));
-    const meshes = getMeshes(urlParams);
+    const materials = getMaterials(urlParams);
 
     //set up three renderer
     let w = window.innerWidth;
@@ -62,7 +62,7 @@ function loadGame()
     //handlers and managers
     const input = new GameObject.input(w, h, dpr);
     const multiplayer = new GameObject.multiplayer();
-    const handler = new GameObject.handler(scene, camera, ui, ghostUi, meshes, input, multiplayer);
+    const handler = new GameObject.handler(scene, camera, ui, ghostUi, materials, input, multiplayer);
 
     
     handleWindowResize();
@@ -82,10 +82,11 @@ function loadGame()
     })
 
     //tick
-    let lastTime = 0;
+    let lastTime = null;
     function tick(t = 0)
     {
         requestAnimationFrame(tick);
+        lastTime ??= t;
         let dt = (t - lastTime) / 1000;
         lastTime = t;
         let time = t / 1000;

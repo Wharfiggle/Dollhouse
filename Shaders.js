@@ -38,26 +38,13 @@ function establishOnBeforeCompileChain(material, features) //features: array of 
 
 
 //set up meshes
-export function getMeshes(args)
+export function getMaterials(args)
 {
-    const meshes = {
-        player: new THREE.Mesh(
-            new THREE.CylinderGeometry(1, 1, 1, 32),
-            new THREE.MeshStandardMaterial({ color:"purple" })
-        ),
-        playerHead: new THREE.Mesh(
-            new THREE.ConeGeometry(0.25, 0.5, 4),
-            new THREE.MeshStandardMaterial({ color:"purple" })
-        ),
-        ground: new THREE.Mesh(
-            new THREE.PlaneGeometry(20, 20),
-            new THREE.MeshStandardMaterial({ color:"white", side:THREE.DoubleSide })
-        ),
-        placedDoll: new THREE.Mesh(
-            new THREE.CylinderGeometry(1, 1, 1, 32),
-            new THREE.MeshStandardMaterial({ transparent: true, color: "purple", opacity: 0.5 })
-        )
+    const materials = {
+        player: new THREE.MeshStandardMaterial({ color:"purple" }),
+        ground: new THREE.MeshStandardMaterial({ color:"white", side:THREE.DoubleSide }),
+        placedDoll: new THREE.MeshStandardMaterial({ transparent: true, color: "purple", opacity: 0.5 })
     }
 
-    return meshes;
+    return materials;
 }
