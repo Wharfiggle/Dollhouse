@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { joinRoom } from "trystero";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
+import * as SkeletonUtils from "jsm/utils/SkeletonUtils.js";
 
 const uiScaleHeight = 1000;
 
@@ -13,7 +14,8 @@ const sendingDataIds = {
     yaw: 2,
     headPitch: 3,
     red: 4,
-    placedDollPos: 5
+    placedDollPos: 5,
+    placedDollYaw: 6
 };
 
 //number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
@@ -111,7 +113,7 @@ export class handler
     preloadMeshes = [ "./StumpyMannequin.glb" ];
     modelLoader = new GLTFLoader();
     meshes = {};
-    meshAnimationData = {};
+    gltfData = {};
     meshSubscribers = {};
     gameObjects = [];
     localGameObjects = [];
@@ -156,22 +158,11 @@ export class handler
         this.modelLoader.load(
             filePath,
             (gltf) => {
-                let mesh;
-                gltf.scene.traverse((child) => {
-                    if(child.isMesh)
-                        mesh = new THREE.Mesh(child.geometry, new THREE.MeshStandardMaterial());
-                });
-
-                const animationMixer = new THREE.AnimationMixer(gltf.scene);
-                const animations = gltf.animations;
-
-                this.meshes[filePath] = mesh;
-                this.meshAnimationData[filePath] = { animationMixer: animationMixer, animations: animations };
-                
+                this.gltfData[filePath] = gltf;
                 const entries = this.meshSubscribers[filePath];
                 for(const callback of entries)
                 {
-                    callback(mesh.clone(), animationMixer, animations);
+                    callback(gltf);
                 }
                 delete this.meshSubscribers[filePath];
             }
@@ -179,12 +170,9 @@ export class handler
     }
     requestMesh(filePath, callback)
     {
-        const entry = this.meshes[filePath];
+        const entry = this.gltfData[filePath];
         if(entry)
-        {
-            const animationData = this.meshAnimationData[filePath];
-            callback(entry.clone(), animationData.animationMixer, animationData.animations);
-        }
+            callback(entry);
         else
         {
             this.meshSubscribers[filePath] ??= [];
@@ -233,8 +221,7 @@ export class handler
         else
             this.nonLocalGameObjects.push(gameObj);
         
-        if(gameObj.mesh)
-            this.scene.add(gameObj.mesh);
+        this.scene.add(gameObj.mesh);
 
         if(under)
             this.unshiftGameObjects.push(gameObj);
@@ -242,12 +229,7 @@ export class handler
             this.gameObjects.push(gameObj);
     }
     removeGameObject(gameObj) { this.removeGameObjects.push(gameObj); }
-    removeMesh(mesh)
-    {
-        if(!mesh)
-            return;
-        this.scene.remove(mesh);
-    }
+    removeMesh(mesh) { this.scene.remove(mesh); }
     tick(dt, time)
     {
         for(const go of this.gameObjects)
@@ -307,10 +289,12 @@ export class gameObject extends EventTarget
     sendingData = {};
     lastSentData = {};
     catchUpData = {};
-    constructor(mesh = null, isLocal = true)
+    constructor(h = null, mesh = null, isLocal = true)
     {
         super();
-        this.mesh = mesh ? mesh.clone() : null;
+        this.handler = h;
+        console.assert(h == null || h instanceof handler, "Handler was not passed properly to a GameObject. If handler is intended to be null, then pass null.");
+        this.mesh = mesh ? mesh.clone() : new THREE.Object3D();
         this.isLocal = isLocal;
     }
     tick(dt, time)
@@ -460,14 +444,12 @@ export class gameObject extends EventTarget
     setPos(vector3)
     {
         this.pos.copy(vector3);
-        if(!!this.mesh)
-            this.mesh.position.copy(this.pos);
+        this.mesh.position.copy(this.pos);
     }
     addPos(vector3)
     {
         this.pos.add(vector3);
-        if(!!this.mesh)
-            this.mesh.position.copy(this.pos);
+        this.mesh.position.copy(this.pos);
     }
     getPos() { return this.pos.clone(); }
     setMesh(mesh)
@@ -497,34 +479,32 @@ export class collisionGameObject extends gameObject
     }
     prevPos = new THREE.Vector3();
     groundLevel = 0;
-    setCollider(radius, height, pos, isStatic, handler = null)
+    setCollider(radius, height, pos, isStatic)
     {
         this.collider.radius = radius;
         this.collider.height = height;
         this.collider.pos = pos;
-        handler ??= this.handler;
-        this.setColliderStatic(isStatic, handler);
+        this.setColliderStatic(isStatic, this.handler);
         if(!this.collider.active)
-            this.setColliderActive(true, handler);
+            this.setColliderActive(true, this.handler);
     }
-    setColliderStatic(s, handler)
+    setColliderStatic(s)
     {
         if(this.collider.active)
         {
-            this.setColliderActive(false, handler);
+            this.setColliderActive(false);
             this.collider.static = s;
-            this.setColliderActive(true, handler);
+            this.setColliderActive(true);
         }
         else
             this.collider.static = s;
     }
-    setColliderActive(active, handler = null)
+    setColliderActive(active)
     {
         if(active == this.collider.active)
             return;
         this.collider.active = active;
-        handler ??= this.handler;
-        const arr = this.collider.static ? handler.colliders.statics : handler.colliders.nonStatics;
+        const arr = this.collider.static ? this.handler.colliders.statics : this.handler.colliders.nonStatics;
         if(active)
             arr.push(this);
         else
@@ -594,8 +574,8 @@ export class basicCollider extends collisionGameObject
 {
     constructor(args)
     {
-        super(new THREE.Mesh(new THREE.CylinderGeometry(args.radius, args.radius, args.height, 32), new THREE.MeshStandardMaterial({color:"black"})));
-        this.setCollider(args.radius, args.height, new THREE.Vector3(), true, args.handler);
+        super(args.handler, new THREE.Mesh(new THREE.CylinderGeometry(args.radius, args.radius, args.height, 32), new THREE.MeshStandardMaterial({color:"black"})));
+        this.setCollider(args.radius, args.height, new THREE.Vector3(), true);
         const pos = args.startPos ?? args.pos;
         if(pos != null)
             this.setPos(pos);
@@ -845,36 +825,37 @@ export class player extends collisionGameObject
     playerMesh = null;
     red = false;
     gravity = 0;
+    placedDoll = null;
     constructor(args)
     {
-        super(new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
+        super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
 
         this.mesh.add(this.cameraRoot);
-        this.headMesh = args.handler.meshes.playerHead.clone();
+        this.headMesh = this.handler.meshes.playerHead.clone();
         this.headMesh.material = this.headMesh.material.clone();
         this.cameraRoot.add(this.headMesh);
         this.cameraRoot.position.set(0, -this.height * 0.75, this.height * 1.25);
 
-        this.handler = args.handler;
-        args.handler.requestMesh("./StumpyMannequin.glb", (mesh, animationMixer, animations) => {
-            this.playerMesh = mesh.clone();
-            this.playerMesh.material = this.handler.materials.player.clone();
+        this.handler.requestMesh("./StumpyMannequin.glb", (gltf) => {
+            this.playerMesh = SkeletonUtils.clone(gltf.scene);
+            this.playerMesh.traverse((obj) => {
+                if(obj.isMesh)
+                    obj.material = this.handler.materials.player.clone();
+            });
             this.mesh.add(this.playerMesh);
             this.playerMesh.rotateZ(Math.PI);
 
-            this.animationMixer = animationMixer;
+            this.animationMixer = new THREE.AnimationMixer(this.playerMesh);
             for(const key of Object.keys(this.poses))
             {
-                const clip = THREE.AnimationClip.findByName(animations, key);
+                const clip = THREE.AnimationClip.findByName(gltf.animations, key);
                 this.poses[key].action = this.animationMixer.clipAction(clip);
-                this.poses[key].action.setLoop(THREE.LoopRepeat);
             }
-            //todo fix poses not playing, nothing seems to be wrong with the code after vigorous testing probably something wrong with the model
             this.poses.Stand.action.play();
         });
 
         this.id = args.id ?? 0;
-        args.handler.multiplayer.addPlayer(this, this.id);
+        this.handler.multiplayer.addPlayer(this, this.id);
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
@@ -886,7 +867,6 @@ export class player extends collisionGameObject
                 this.setPos(new THREE.Vector3(xy.x, xy.y, this.pos.z));
                 return t >= 1;
             });
-
         this.addSendingData(sendingDataIds.z, "metersNoDelta",
             () => [this.getPos().z], 
             (toFormat) => toFormat[0],
@@ -920,17 +900,29 @@ export class player extends collisionGameObject
             });
 
         this.addSendingData(sendingDataIds.placedDollPos, "metersNoDelta",
-            () => {
-                const result = this.placedDoll == null ? [null, null, null] : this.placedDoll.getPos().toArray();
-                this.placedDoll = null;
-                return result;
-            },
+            () => { return this.placedDoll == null ? Array(3) : this.placedDoll.getPos().toArray(); },
             (toFormat) => { return toFormat[0] == null ? null : new THREE.Vector3(toFormat[0], toFormat[1], toFormat[2]); },
             (data) => {
-                this.handler.newGameObject(placedDoll, { pos: data.target, isLocal: false });
+                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: data.target, isLocal: false });
                 return true;
-            }
-        )
+            });
+        this.addSendingData(sendingDataIds.placedDollYaw, "radians",
+            () => { return this.placedDoll == null ? [null] : [this.placedDoll.mesh.rotation.z]; },
+            (toFormat) => { return toFormat[0] == null ? null : toFormat[0]; },
+            (data) => {
+                this.placedDoll.mesh.rotation.set(0, 0, data.target);
+                return true;
+            });
+    }
+    send(action, full, all)
+    {
+        super.send(action, full, all);
+        this.placedDoll = null;
+    }
+    catchUp(sendInterval, dt, time)
+    {
+        super.catchUp(sendInterval, dt, time);
+        this.placedDoll = null;
     }
     setRed(red)
     {
@@ -964,7 +956,7 @@ export class player extends collisionGameObject
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
             });
             this.handler.input.subscribeToButton(this, "e", false, () => {
-                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), isLocal: true });
+                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), rotation: this.mesh.rotation, isLocal: true });
             });
         }
         else
@@ -1030,16 +1022,17 @@ export class placedDoll extends collisionGameObject
     solid = false;
     constructor(args)
     {
-        super(new THREE.Object3D(), args.isLocal);
-        this.activePlayer = args.handler.multiplayer.getControlledPlayer();
+        super(args.handler, new THREE.Object3D(), args.isLocal);
+        this.activePlayer = this.handler.multiplayer.getControlledPlayer();
         this.setPos(args.pos);
-        this.setCollider(0.3, 3.5, new THREE.Vector3(), true, args.handler);
-        this.setColliderActive(false, args.handler);
+        if(args.rotation)
+            this.mesh.rotation.copy(args.rotation);
+        this.setCollider(0.3, 3.5, new THREE.Vector3(), true);
+        this.setColliderActive(false);
 
-        this.handler = args.handler;
         this.handler.requestMesh("./StumpyMannequin.glb", (mesh) => {
             this.setMesh(mesh);
-            this.mesh.material = args.handler.materials.placedDoll;
+            this.mesh.material = this.handler.materials.placedDoll;
         });
     }
     tick(dt, time)
@@ -1057,7 +1050,7 @@ export class ground extends gameObject
 {
     constructor(args)
     {
-        super(args.handler.meshes.ground);
+        super(args.handler, args.handler.meshes.ground);
         this.setPos(new THREE.Vector3());
     }
 }
