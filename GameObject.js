@@ -17,6 +17,11 @@ const sendingDataIds = {
     placedDollPos: 5,
     placedDollYaw: 6
 };
+const poses = {
+    Stand: { index: 0 },
+    TPose: { index: 1 },
+    Droop: { index: 2 }
+}
 
 //number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
 const flagBytes = Math.ceil((1 + Object.keys(sendingDataIds).length) / 8);
@@ -162,7 +167,7 @@ export class handler
                 const entries = this.meshSubscribers[filePath];
                 for(const callback of entries)
                 {
-                    callback(gltf);
+                    callback(SkeletonUtils.clone(gltf.scene), gltf.animations);
                 }
                 delete this.meshSubscribers[filePath];
             }
@@ -170,9 +175,9 @@ export class handler
     }
     requestMesh(filePath, callback)
     {
-        const entry = this.gltfData[filePath];
-        if(entry)
-            callback(entry);
+        const gltf = this.gltfData[filePath];
+        if(gltf)
+            callback(SkeletonUtils.clone(gltf.scene), gltf.animations);
         else
         {
             this.meshSubscribers[filePath] ??= [];
@@ -457,7 +462,7 @@ export class gameObject extends EventTarget
         if(!mesh)
             return;
         const prevMesh = this.mesh;
-        this.mesh = mesh.clone();
+        this.mesh = mesh;
         this.mesh.position.copy(this.pos);
         this.mesh.rotation.copy(prevMesh.rotation);
         if(this.handler)
@@ -810,14 +815,9 @@ export class multiplayer
 
 export class player extends collisionGameObject
 {
-    height = 3.5;
     speed = 3;
-    poses = {
-        Stand: {},
-        TPose: {},
-        Droop: {}
-    };
-    animationMixer = null;
+    poseActions = {};
+    currentPose = poses.Stand;
     cameraRoot = new THREE.Object3D();
     id = 0;
     controlled = false;
@@ -834,10 +834,10 @@ export class player extends collisionGameObject
         this.headMesh = this.handler.meshes.playerHead.clone();
         this.headMesh.material = this.headMesh.material.clone();
         this.cameraRoot.add(this.headMesh);
-        this.cameraRoot.position.set(0, -this.height * 0.75, this.height * 1.25);
+        this.cameraRoot.position.set(0, -2, 3);
 
-        this.handler.requestMesh("./StumpyMannequin.glb", (gltf) => {
-            this.playerMesh = SkeletonUtils.clone(gltf.scene);
+        this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
+            this.playerMesh = scene;
             this.playerMesh.traverse((obj) => {
                 if(obj.isMesh)
                     obj.material = this.handler.materials.player.clone();
@@ -845,13 +845,14 @@ export class player extends collisionGameObject
             this.mesh.add(this.playerMesh);
             this.playerMesh.rotateZ(Math.PI);
 
-            this.animationMixer = new THREE.AnimationMixer(this.playerMesh);
-            for(const key of Object.keys(this.poses))
+            const mixer = new THREE.AnimationMixer(this.playerMesh);
+            for(const key of Object.keys(poses))
             {
-                const clip = THREE.AnimationClip.findByName(gltf.animations, key);
-                this.poses[key].action = this.animationMixer.clipAction(clip);
+                const clip = THREE.AnimationClip.findByName(animations, key);
+                this.poseActions[key] = mixer.clipAction(clip);
             }
-            this.poses.Stand.action.play();
+            this.setPose("Stand");
+            mixer.update(1);
         });
 
         this.id = args.id ?? 0;
@@ -913,6 +914,19 @@ export class player extends collisionGameObject
                 this.placedDoll.mesh.rotation.set(0, 0, data.target);
                 return true;
             });
+        this.addSendingData(sendingDataIds.placedDollPose, "",
+            () => this.currentPose.index,
+            (toFormat) => toFormat,
+            (data) => {
+                this.placedDoll.setPose(Object.keys(poses)[data.target]);
+                return true;
+            }
+        )
+    }
+    setPose(poseStr)
+    {
+        this.currentPose = { ...poses[poseStr], name: poseStr };
+        this.poseActions[poseStr].play();
     }
     send(action, full, all)
     {
@@ -942,7 +956,7 @@ export class player extends collisionGameObject
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
             this.cameraRoot.remove(this.headMesh);
 
-            this.setCollider(0.3, this.height, new THREE.Vector3(0, 0, this.height / 2), false, this.handler);
+            this.setCollider(0.3, 2, new THREE.Vector3(0, 0, 1), false);
 
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
@@ -956,7 +970,7 @@ export class player extends collisionGameObject
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
             });
             this.handler.input.subscribeToButton(this, "e", false, () => {
-                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), rotation: this.mesh.rotation, isLocal: true });
+                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), yaw: this.mesh.rotation.z + Math.PI, pose: this.currentPose.name, isLocal: true });
             });
         }
         else
@@ -967,9 +981,6 @@ export class player extends collisionGameObject
     }
     tick(dt, time)
     {
-        if(this.animationMixer)
-            this.animationMixer.update(dt);
-
         if(!this.isLocal)
             return;
 
@@ -1025,14 +1036,25 @@ export class placedDoll extends collisionGameObject
         super(args.handler, new THREE.Object3D(), args.isLocal);
         this.activePlayer = this.handler.multiplayer.getControlledPlayer();
         this.setPos(args.pos);
-        if(args.rotation)
-            this.mesh.rotation.copy(args.rotation);
-        this.setCollider(0.3, 3.5, new THREE.Vector3(), true);
+        if(args.yaw)
+            this.mesh.rotation.z = args.yaw;
+        if(args.pose)
+            this.setPose(args.pose);
+        this.setCollider(0.3, 2, new THREE.Vector3(0, 0, 1), true);
         this.setColliderActive(false);
-
-        this.handler.requestMesh("./StumpyMannequin.glb", (mesh) => {
-            this.setMesh(mesh);
-            this.mesh.material = this.handler.materials.placedDoll;
+    }
+    setPose(poseStr)
+    {
+        this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
+            this.setMesh(scene);
+            this.mesh.traverse((obj) => {
+                if(obj.isMesh)
+                    obj.material = this.handler.materials.placedDoll;
+            });
+            const mixer = new THREE.AnimationMixer(this.mesh);
+            const clip = THREE.AnimationClip.findByName(animations, poseStr);
+            mixer.clipAction(clip).play();
+            mixer.update(1);
         });
     }
     tick(dt, time)
@@ -1041,7 +1063,10 @@ export class placedDoll extends collisionGameObject
         {
             this.solid = true;
             this.setColliderActive(true);
-            this.mesh.material = this.handler.materials.player;
+            this.mesh.traverse((obj) => {
+                if(obj.isMesh)
+                    obj.material = this.handler.materials.player;
+            });
         }
     }
 }
