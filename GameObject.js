@@ -3,6 +3,9 @@ import { joinRoom } from "trystero";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "jsm/utils/SkeletonUtils.js";
 
+const KEY_RELEASED = true;
+const KEY_PRESSED = false;
+
 const uiScaleHeight = 1000;
 
 let dpr = window.devicePixelRatio || 1;
@@ -14,16 +17,18 @@ const sendingDataIds = {
     yaw: 2,
     headPitch: 3,
     red: 4,
-    placedDollPos: 5,
-    placedDollYaw: 6
+    pose: 5,
+    placedDollPos: 6,
+    placedDollYaw: 7,
+    placedDollPose: 8
 };
 const poses = {
-    Stand: { index: 0 },
-    TPose: { index: 1 },
-    Droop: { index: 2 }
+    Stand: { index: 0, collider: { radius: 0.3, height: 2, pos: new THREE.Vector3() } },
+    TPose: { index: 1, collider: {}},
+    Droop: { index: 2, collider: { radius: 0.5, height: 1.3, pos: new THREE.Vector3(0, 0.25, 0) }}
 }
 
-//number of bytes needed to store all flags, 1 for full and 1 for every sendingDataId
+//number of bytes needed to store all flags, 1 bit for full and 1 bit for every sendingDataId
 const flagBytes = Math.ceil((1 + Object.keys(sendingDataIds).length) / 8);
 
 //compression information and methods stored by unit
@@ -425,7 +430,8 @@ export class gameObject extends EventTarget
             //create buffer, add flags, then add data
             const buffer = new ArrayBuffer(totalBytes);
             const view = new DataView(buffer);
-            view["setUint" + (8 * flags.byteLength)](0, flags);
+            //view["setUint" + (8 * flags.byteLength)](0, flags);
+            new Uint8Array(buffer).set(flags, 0);
             let offset = flags.byteLength;
             for(const [id, value] of dataEntries)
             {
@@ -483,26 +489,35 @@ export class collisionGameObject extends gameObject
         active: false
     }
     prevPos = new THREE.Vector3();
+    prevYaw = 0;
     groundLevel = 0;
-    setCollider(radius, height, pos, isStatic)
+    setCollider(radius, height, bottomPos, isStatic)
     {
         this.collider.radius = radius;
         this.collider.height = height;
-        this.collider.pos = pos;
+        this.collider.pos.set(bottomPos.x, bottomPos.y, bottomPos.z + height / 2);
         this.setColliderStatic(isStatic, this.handler);
         if(!this.collider.active)
             this.setColliderActive(true, this.handler);
     }
-    setColliderStatic(s)
+    setColliderFromPose(pose, isStatic)
+    {
+        const col = pose.collider;
+        const radius = Object.hasOwn(col, "radius") ? col.radius : poses.Stand.collider.radius;
+        const height = Object.hasOwn(col, "height") ? col.height : poses.Stand.collider.height;
+        const pos = Object.hasOwn(col, "pos") ? col.pos : poses.Stand.collider.pos;
+        this.setCollider(radius, height, pos, isStatic);
+    }
+    setColliderStatic(isStatic)
     {
         if(this.collider.active)
         {
             this.setColliderActive(false);
-            this.collider.static = s;
+            this.collider.static = isStatic;
             this.setColliderActive(true);
         }
         else
-            this.collider.static = s;
+            this.collider.static = isStatic;
     }
     setColliderActive(active)
     {
@@ -515,11 +530,22 @@ export class collisionGameObject extends gameObject
         else
             arr.splice(arr.indexOf(this), 1);
     }
+    getColliderWorldPosition()
+    {
+        const pos = this.getPos();
+        const colPos = this.collider.pos;
+        const yaw = this.mesh.rotation.z;
+        return new THREE.Vector3(
+            pos.x + colPos.x * Math.cos(yaw) - colPos.y * Math.sin(yaw),
+            pos.y + colPos.x * Math.sin(yaw) + colPos.y * Math.cos(yaw),
+            pos.z + colPos.z);
+    }
     tick(dt, time)
     {
         super.tick(dt, time);
 
-        if(this.getPos().sub(this.prevPos).length() > 0)
+        const checkFromYaw = (this.collider.pos.x != 0 || this.collider.pos.y != 0) && this.mesh.rotation.z != this.prevYaw;
+        if(checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
         {
             for(const s of this.handler.colliders.statics)
             {
@@ -531,11 +557,11 @@ export class collisionGameObject extends gameObject
     checkForCollision(gameObj)
     {
         //see if heights intersect
-        const myPos = this.getPos().add(this.collider.pos);
+        const myPos = this.getColliderWorldPosition();
         const myHalfHeight = this.collider.height / 2;
         const myBottom = myPos.z - myHalfHeight;
         const myTop = myPos.z + myHalfHeight;
-        const yourPos = gameObj.getPos().add(gameObj.collider.pos);
+        const yourPos = gameObj.getColliderWorldPosition();
         const yourHalfHeight = gameObj.collider.height / 2;
         const yourBottom = yourPos.z - yourHalfHeight;
         const yourTop = yourPos.z + yourHalfHeight;
@@ -580,8 +606,10 @@ export class basicCollider extends collisionGameObject
     constructor(args)
     {
         super(args.handler, new THREE.Mesh(new THREE.CylinderGeometry(args.radius, args.radius, args.height, 32), new THREE.MeshStandardMaterial({color:"black"})));
-        this.setCollider(args.radius, args.height, new THREE.Vector3(), true);
-        const pos = args.startPos ?? args.pos;
+        this.setCollider(args.radius, args.height, new THREE.Vector3(0, 0, -args.height / 2), true);
+        let pos = args.pos;
+        if(pos == null && args.bottomPos)
+            pos = new THREE.Vector3(args.bottomPos.x, args.bottomPos.y, args.bottomPos.z + args.height / 2);
         if(pos != null)
             this.setPos(pos);
         this.mesh.rotateX(Math.PI / 2);
@@ -607,16 +635,16 @@ export class input
         document.addEventListener("mousemove", (event) => this.cursorMoveEvent(event));
         document.addEventListener("mousedown", (event) => {
             const key = ["leftmouse", "middlemouse", "rightmouse"][event.button];
-            this.buttonEvent({key: key}, false);
+            this.buttonEvent({key: key}, KEY_PRESSED);
         });
         document.addEventListener("mouseup", (event) => {
             const key = ["leftmouse", "middlemouse", "rightmouse"][event.button];
-            this.buttonEvent({key: key}, true);
+            this.buttonEvent({key: key}, KEY_RELEASED);
         })
 
         //keyboard input
-        window.addEventListener("keydown", (event) => this.buttonEvent(event, false));
-        window.addEventListener("keyup", (event) => this.buttonEvent(event, true))
+        window.addEventListener("keydown", (event) => this.buttonEvent(event, KEY_PRESSED));
+        window.addEventListener("keyup", (event) => this.buttonEvent(event, KEY_RELEASED))
 
         //touch input
         document.addEventListener("touchstart", (event) => {
@@ -752,13 +780,16 @@ export class multiplayer
 
             //decompress received data
             const view = new DataView(update.buffer, update.byteOffset, update.byteLength);
-            const flags = view["getUint" + (8 * flagBytes)](0);
+            const flags = new Uint8Array(update.buffer, 0, flagBytes);
             let offset = flagBytes;
-            const full = flags & 1;
+            const full = flags[0] & 1;
             let data = {};
-            for(let i = 1; i < 8 * flagBytes; i++)
+            const numFlags = Object.keys(sendingDataIds).length + 1;
+            for(let i = 1; i < numFlags; i++)
             {
-                if(flags & Math.pow(2, i))
+                const byte = Math.floor(i / 8);
+                const bitInByte = i % 8;
+                if(flags[byte] & (1 << bitInByte))
                 {
                     const id = i - 1;
                     const sendingData = player.sendingData[id];
@@ -816,6 +847,7 @@ export class multiplayer
 export class player extends collisionGameObject
 {
     speed = 3;
+    animationMixer = null;
     poseActions = {};
     currentPose = poses.Stand;
     cameraRoot = new THREE.Object3D();
@@ -826,6 +858,7 @@ export class player extends collisionGameObject
     red = false;
     gravity = 0;
     placedDoll = null;
+    insidePlacedDoll = false;
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
@@ -845,14 +878,13 @@ export class player extends collisionGameObject
             this.mesh.add(this.playerMesh);
             this.playerMesh.rotateZ(Math.PI);
 
-            const mixer = new THREE.AnimationMixer(this.playerMesh);
+            this.animationMixer = new THREE.AnimationMixer(this.playerMesh);
             for(const key of Object.keys(poses))
             {
                 const clip = THREE.AnimationClip.findByName(animations, key);
-                this.poseActions[key] = mixer.clipAction(clip);
+                this.poseActions[key] = this.animationMixer.clipAction(clip);
             }
             this.setPose("Stand");
-            mixer.update(1);
         });
 
         this.id = args.id ?? 0;
@@ -900,6 +932,15 @@ export class player extends collisionGameObject
                 return true;
             });
 
+        this.addSendingData(sendingDataIds.pose, "",
+            () => [this.currentPose.index],
+            (toFormat) => toFormat[0],
+            (data) => {
+                this.setPose(Object.keys(poses)[data.target]);
+                return true;
+            }
+        )
+
         this.addSendingData(sendingDataIds.placedDollPos, "metersNoDelta",
             () => { return this.placedDoll == null ? Array(3) : this.placedDoll.getPos().toArray(); },
             (toFormat) => { return toFormat[0] == null ? null : new THREE.Vector3(toFormat[0], toFormat[1], toFormat[2]); },
@@ -909,24 +950,26 @@ export class player extends collisionGameObject
             });
         this.addSendingData(sendingDataIds.placedDollYaw, "radians",
             () => { return this.placedDoll == null ? [null] : [this.placedDoll.mesh.rotation.z]; },
-            (toFormat) => { return toFormat[0] == null ? null : toFormat[0]; },
+            (toFormat) => toFormat[0],
             (data) => {
                 this.placedDoll.mesh.rotation.set(0, 0, data.target);
                 return true;
             });
         this.addSendingData(sendingDataIds.placedDollPose, "",
-            () => this.currentPose.index,
-            (toFormat) => toFormat,
+            () => { return this.placedDoll == null ? [null] : [this.placedDoll.pose.index]; },
+            (toFormat) => toFormat[0],
             (data) => {
                 this.placedDoll.setPose(Object.keys(poses)[data.target]);
                 return true;
-            }
-        )
+            });
     }
     setPose(poseStr)
     {
+        this.animationMixer.stopAllAction();
         this.currentPose = { ...poses[poseStr], name: poseStr };
         this.poseActions[poseStr].play();
+        this.setColliderFromPose(this.currentPose, false);
+        this.animationMixer.update(0);
     }
     send(action, full, all)
     {
@@ -963,15 +1006,25 @@ export class player extends collisionGameObject
                 this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
                 this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
             });
-            this.handler.input.subscribeToButton(this, "r", false, () => this.setRed(!this.red));
-            this.handler.input.subscribeToButton(this, " ", false, () => {
+            this.handler.input.subscribeToButton(this, "r", KEY_PRESSED, () => this.setRed(!this.red));
+            this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => {
                 const pos = this.getPos();
                 this.gravity = 0;
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
             });
-            this.handler.input.subscribeToButton(this, "e", false, () => {
-                this.placedDoll = this.handler.newGameObject(placedDoll, { pos: this.getPos(), yaw: this.mesh.rotation.z + Math.PI, pose: this.currentPose.name, isLocal: true });
+            this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
+                if(this.insidePlacedDoll)
+                    return;
+                this.placedDoll = this.handler.newGameObject(placedDoll, {
+                    pos: this.getPos(), 
+                    yaw: this.mesh.rotation.z, 
+                    pose: this.currentPose.name, isLocal: true 
+                });
+                this.insidePlacedDoll = true;
             });
+            this.handler.input.subscribeToButton(this, "1", KEY_PRESSED, () => { this.setPose("Stand"); });
+            this.handler.input.subscribeToButton(this, "2", KEY_PRESSED, () => { this.setPose("Droop"); });
+            this.handler.input.subscribeToButton(this, "3", KEY_PRESSED, () => { this.setPose("TPose"); })
         }
         else
         {
@@ -1031,6 +1084,8 @@ export class placedDoll extends collisionGameObject
 {
     activePlayer;
     solid = false;
+    dollMesh = null;
+    pose = {};
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), args.isLocal);
@@ -1040,27 +1095,31 @@ export class placedDoll extends collisionGameObject
             this.mesh.rotation.z = args.yaw;
         if(args.pose)
             this.setPose(args.pose);
-        this.setCollider(0.3, 2, new THREE.Vector3(0, 0, 1), true);
-        this.setColliderActive(false);
     }
     setPose(poseStr)
     {
         this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
-            this.setMesh(scene);
-            this.mesh.traverse((obj) => {
+            this.dollMesh = scene;
+            this.dollMesh.traverse((obj) => {
                 if(obj.isMesh)
                     obj.material = this.handler.materials.placedDoll;
             });
-            const mixer = new THREE.AnimationMixer(this.mesh);
+            this.mesh.add(this.dollMesh);
+            this.dollMesh.rotateZ(Math.PI);
+            const mixer = new THREE.AnimationMixer(this.dollMesh);
             const clip = THREE.AnimationClip.findByName(animations, poseStr);
             mixer.clipAction(clip).play();
-            mixer.update(1);
+            mixer.update(0);
+            this.pose = poses[poseStr];
+            this.setColliderFromPose(this.pose, true);
+            this.setColliderActive(false);
         });
     }
     tick(dt, time)
     {
         if(!this.solid && !this.checkForCollision(this.activePlayer))
         {
+            this.activePlayer.insidePlacedDoll = false;
             this.solid = true;
             this.setColliderActive(true);
             this.mesh.traverse((obj) => {
