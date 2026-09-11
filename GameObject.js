@@ -118,7 +118,8 @@ export class handler
     colliders = {
         statics: [],
         nonStatics: [],
-        cellSize: 2.0
+        cellSize: 2.0,
+        debugDraw: false
     }
     preloadMeshes = [ "./StumpyMannequin.glb" ];
     modelLoader = new GLTFLoader();
@@ -486,11 +487,18 @@ export class collisionGameObject extends gameObject
         height: 0,
         pos: new THREE.Vector3(),
         static: false,
-        active: false
+        active: false,
+        debugDrawMesh: null
     }
     prevPos = new THREE.Vector3();
     prevYaw = 0;
     groundLevel = 0;
+    constructor(h = null, mesh = null, isLocal = true)
+    {
+        super(h, mesh, isLocal);
+        if(h?.colliders?.debugDraw)
+            this.toggleDebugDraw();
+    }
     setCollider(radius, height, bottomPos, isStatic)
     {
         this.collider.radius = radius;
@@ -499,6 +507,12 @@ export class collisionGameObject extends gameObject
         this.setColliderStatic(isStatic, this.handler);
         if(!this.collider.active)
             this.setColliderActive(true, this.handler);
+
+        if(this.collider.debugDrawMesh)
+        {
+            this.toggleDebugDraw();
+            this.toggleDebugDraw();
+        }
     }
     setColliderFromPose(pose, isStatic)
     {
@@ -539,6 +553,24 @@ export class collisionGameObject extends gameObject
             pos.x + colPos.x * Math.cos(yaw) - colPos.y * Math.sin(yaw),
             pos.y + colPos.x * Math.sin(yaw) + colPos.y * Math.cos(yaw),
             pos.z + colPos.z);
+    }
+    toggleDebugDraw()
+    {
+        if(this.collider.debugDrawMesh)
+        {
+            this.mesh.remove(this.collider.debugDrawMesh);
+            this.collider.debugDrawMesh = null;
+        }
+        else
+        {
+            this.collider.debugDrawMesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(this.collider.radius, this.collider.radius, this.collider.height, 32), 
+                new THREE.MeshStandardMaterial({color:"red", transparent:true, opacity:0.5}));
+            this.mesh.add(this.collider.debugDrawMesh);
+            if(Math.abs(this.mesh.rotation.x) == 0)
+                this.collider.debugDrawMesh.rotateX(Math.PI / 2);
+            this.collider.debugDrawMesh.position.copy(this.collider.pos);
+        }
     }
     tick(dt, time)
     {
@@ -1024,7 +1056,15 @@ export class player extends collisionGameObject
             });
             this.handler.input.subscribeToButton(this, "1", KEY_PRESSED, () => { this.setPose("Stand"); });
             this.handler.input.subscribeToButton(this, "2", KEY_PRESSED, () => { this.setPose("Droop"); });
-            this.handler.input.subscribeToButton(this, "3", KEY_PRESSED, () => { this.setPose("TPose"); })
+            this.handler.input.subscribeToButton(this, "3", KEY_PRESSED, () => { this.setPose("TPose"); });
+            this.handler.input.subscribeToButton(this, "`", KEY_PRESSED, () => {
+                this.handler.colliders.debugDraw = true;
+                const allColliders = [...this.handler.colliders.statics, ...this.handler.colliders.nonStatics];
+                for(const cgo of allColliders)
+                {
+                    cgo.toggleDebugDraw();
+                }
+            })
         }
         else
         {
