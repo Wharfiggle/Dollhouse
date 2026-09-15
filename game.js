@@ -62,7 +62,8 @@ function loadGame()
     //handlers and managers
     const input = new GameObject.input(w, h, dpr);
     const multiplayer = new GameObject.multiplayer();
-    const handler = new GameObject.handler(scene, camera, ui, ghostUi, materials, input, multiplayer);
+    const collision = new GameObject.collision();
+    const handler = new GameObject.handler(scene, camera, ui, ghostUi, materials, input, multiplayer, collision);
 
     
     handleWindowResize();
