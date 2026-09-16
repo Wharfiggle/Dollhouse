@@ -505,10 +505,17 @@ export class collision
     }
     removeCollider(gameObj)
     {
+        const arr = gameObj.collider.static ? this.statics : this.nonStatics;
+        arr.splice(arr.indexOf(gameObj), 1);
         if(gameObj.collider.static)
-            this.statics.splice(this.statics.indexOf(gameObj), 1);
-        else
-            this.nonStatics.splice(this.nonStatics.indexOf(gameObj), 1);
+        {
+            for(const cellKey of gameObj.collider.cells)
+            {
+                const cell = this.staticCells[cellKey];
+                cell.splice(cell.indexOf(gameObj), 1);
+            }
+        }
+        gameObj.collider.cells = [];
     }
     setDebugDraw(debugDraw)
     {
@@ -527,6 +534,7 @@ export class collision
     }
 }
 
+//todo move functions to collider?
 export class collisionGameObject extends gameObject
 {
     collider = {
@@ -603,18 +611,40 @@ export class collisionGameObject extends gameObject
             pos.x + colPos.x * Math.cos(yaw) - colPos.y * Math.sin(yaw),
             pos.y + colPos.x * Math.sin(yaw) + colPos.y * Math.cos(yaw),
             pos.z + colPos.z);
+        
+        this.collider.worldPos.copy(result);
 
-        //todo update cells
+        const cellSize = this.handler.collision.cellSize;
+        const newCells = [];
+        const minCellX = Math.floor((result.x - this.collider.radius) / cellSize);
+        const maxCellX = Math.floor((result.x + this.collider.radius) / cellSize);
+        const minCellY = Math.floor((result.y - this.collider.radius) / cellSize);
+        const maxCellY = Math.floor((result.y + this.collider.radius) / cellSize);
+        for(let y = minCellY; y <= maxCellY; y++)
+        {
+            for(let x = minCellX; x <= maxCellX; x++)
+            {
+                newCells.push(this.handler.collision.getCellKey({ x: x * cellSize, y: y * cellSize }));
+            }
+        }
+
         if(this.collider.static)
         {
-
+            for(const oldCell of this.collider.cells)
+            {
+                if(newCells.includes(oldCell))
+                    continue;
+                const entry = this.handler.collision.staticCells[oldCell];
+                entry.splice(entry.indexOf(this), 1);
+            }
+            for(const newCell of newCells)
+            {
+                if(this.collider.cells.includes(newCell))
+                    continue;
+                (this.handler.collision.staticCells[newCell] ??= []).push(this);
+            }
         }
-        else
-        {
-
-        }
-
-        this.collider.worldPos.copy(result);
+        this.collider.cells = newCells;
     }
     setDebugDraw(debugDraw)
     {
@@ -640,6 +670,10 @@ export class collisionGameObject extends gameObject
     {
         super.tick(dt, time);
 
+        if(!this.collider.active || this.collider.static)
+            return;
+
+        //see if we should check for collisions
         const rotationalSymmetry = this.collider.pos.x == 0 && this.collider.pos.y == 0;
         let checkFromYaw = false;
         if(rotationalSymmetry)
@@ -648,10 +682,21 @@ export class collisionGameObject extends gameObject
             checkFromYaw = this.mesh.rotation.z != this.prevYaw;
         if(checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
         {
+            //check for collisions from static colliders that share a cell with us
             this.calculateColliderWorldPos();
-            for(const s of this.handler.collision.statics)
+            const checked = [];
+            for(const cellKey of this.collider.cells)
             {
-                this.resolveCollision(this.checkForCollision(s));
+                const cell = this.handler.collision.staticCells[cellKey];
+                if(!cell)
+                    continue;
+                for(const s of cell)
+                {
+                    if(checked.includes(s))
+                        continue;
+                    this.resolveCollision(this.checkForCollision(s));
+                    checked.push(s);
+                }
             }
             this.prevPos.copy(this.getPos());
             this.prevYaw = this.mesh.rotation.z;
@@ -709,12 +754,12 @@ export class basicCollider extends collisionGameObject
     constructor(args)
     {
         super(args.handler, new THREE.Mesh(new THREE.CylinderGeometry(args.radius, args.radius, args.height, 32), new THREE.MeshStandardMaterial({color:"black"})));
-        this.setCollider(args.radius, args.height, new THREE.Vector3(0, 0, -args.height / 2), true);
         let pos = args.pos;
         if(pos == null && args.bottomPos)
             pos = new THREE.Vector3(args.bottomPos.x, args.bottomPos.y, args.bottomPos.z + args.height / 2);
         if(pos != null)
             this.setPos(pos);
+        this.setCollider(args.radius, args.height, new THREE.Vector3(0, 0, -args.height / 2), true);
         this.mesh.rotateX(Math.PI / 2);
     }
 }
