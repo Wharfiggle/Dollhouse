@@ -484,15 +484,11 @@ export class collision
     cellSize = 2.0;
     statics = [];
     nonStatics = [];
-    staticCells = [];
+    staticCells = new Map();
     debugDraw = false;
-    constructor()
-    {
-        this.staticCells = Array(Math.ceil(Math.pow(MAX_METERS * 2, 2) / this.cellSize));
-    }
     getCellKey(pos)
     {
-        return Math.floor(((pos.x + MAX_METERS) + (pos.y + MAX_METERS) * MAX_METERS * 2) / this.cellSize);
+        return Math.floor(((pos.x + MAX_METERS) + (pos.y + MAX_METERS) * MAX_METERS * 2 + (pos.z + MAX_METERS) * Math.pow(MAX_METERS * 2, 2)) / this.cellSize);
     }
     addCollider(gameObj)
     {
@@ -511,7 +507,7 @@ export class collision
         {
             for(const cellKey of gameObj.collider.cells)
             {
-                const cell = this.staticCells[cellKey];
+                const cell = this.staticCells.get(cellKey);
                 cell.splice(cell.indexOf(gameObj), 1);
             }
         }
@@ -554,25 +550,27 @@ export class collisionGameObject extends gameObject
     {
         super(h, mesh, isLocal);
     }
-    setCollider(radius, height, bottomPos, isStatic)
+    setCollider(radius, height, bottomPos, isStatic, setActive = true)
     {
         this.collider.radius = radius;
         this.collider.height = height;
         this.collider.pos.set(bottomPos.x, bottomPos.y, bottomPos.z + height / 2);
         this.setColliderStatic(isStatic);
-        if(!this.collider.active)
+        if(setActive && !this.collider.active)
             this.setColliderActive(true);
+        else
+            this.calculateColliderWorldPos(true);
 
         if(this.collider.debugDrawMesh)
             this.setDebugDraw(true);
     }
-    setColliderFromPose(pose, isStatic)
+    setColliderFromPose(pose, isStatic, setActive)
     {
         const col = pose.collider;
         const radius = Object.hasOwn(col, "radius") ? col.radius : poses.Stand.collider.radius;
         const height = Object.hasOwn(col, "height") ? col.height : poses.Stand.collider.height;
         const pos = Object.hasOwn(col, "pos") ? col.pos : poses.Stand.collider.pos;
-        this.setCollider(radius, height, pos, isStatic);
+        this.setCollider(radius, height, pos, isStatic, setActive);
     }
     setColliderStatic(isStatic)
     {
@@ -597,12 +595,12 @@ export class collisionGameObject extends gameObject
         if(active)
         {
             this.handler.collision.addCollider(this);
-            this.calculateColliderWorldPos();
+            this.calculateColliderWorldPos(true);
         }
         else
             this.handler.collision.removeCollider(this);
     }
-    calculateColliderWorldPos()
+    calculateColliderWorldPos(reset = false)
     {
         const pos = this.getPos();
         const colPos = this.collider.pos;
@@ -620,28 +618,41 @@ export class collisionGameObject extends gameObject
         const maxCellX = Math.floor((result.x + this.collider.radius) / cellSize);
         const minCellY = Math.floor((result.y - this.collider.radius) / cellSize);
         const maxCellY = Math.floor((result.y + this.collider.radius) / cellSize);
-        for(let y = minCellY; y <= maxCellY; y++)
+        const minCellZ = Math.floor((result.z - this.collider.height / 2) / cellSize);
+        const maxCellZ = Math.floor((result.z + this.collider.height / 2) / cellSize);
+        for(let z = minCellZ; z <= maxCellZ; z++)
         {
-            for(let x = minCellX; x <= maxCellX; x++)
+            for(let y = minCellY; y <= maxCellY; y++)
             {
-                newCells.push(this.handler.collision.getCellKey({ x: x * cellSize, y: y * cellSize }));
+                for(let x = minCellX; x <= maxCellX; x++)
+                {
+                    newCells.push(this.handler.collision.getCellKey({ x: x * cellSize, y: y * cellSize, z: z * cellSize }));
+                }
             }
         }
 
-        if(this.collider.static)
+        if(reset)
+            this.collider.cells = [];
+        if(this.collider.static && this.collider.active)
         {
             for(const oldCell of this.collider.cells)
             {
                 if(newCells.includes(oldCell))
                     continue;
-                const entry = this.handler.collision.staticCells[oldCell];
+                const entry = this.handler.collision.staticCells.get(oldCell);
                 entry.splice(entry.indexOf(this), 1);
             }
             for(const newCell of newCells)
             {
-                if(this.collider.cells.includes(newCell))
+                if(!reset && this.collider.cells.includes(newCell))
                     continue;
-                (this.handler.collision.staticCells[newCell] ??= []).push(this);
+                let entry = this.handler.collision.staticCells.get(newCell);
+                if(!entry)
+                {
+                    this.handler.collision.staticCells.set(newCell, [this]);
+                    continue;
+                }
+                entry.push(this);
             }
         }
         this.collider.cells = newCells;
@@ -683,24 +694,39 @@ export class collisionGameObject extends gameObject
         if(checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
         {
             //check for collisions from static colliders that share a cell with us
-            this.calculateColliderWorldPos();
-            const checked = [];
-            for(const cellKey of this.collider.cells)
+            const collisions = this.checkForCollisionsInCells();
+            for(const c of collisions)
             {
-                const cell = this.handler.collision.staticCells[cellKey];
-                if(!cell)
-                    continue;
-                for(const s of cell)
-                {
-                    if(checked.includes(s))
-                        continue;
-                    this.resolveCollision(this.checkForCollision(s));
-                    checked.push(s);
-                }
+                this.resolveCollision(c);
             }
             this.prevPos.copy(this.getPos());
             this.prevYaw = this.mesh.rotation.z;
         }
+    }
+    checkForCollisionsInCells()
+    {
+        this.calculateColliderWorldPos();
+        const collisions = [];
+        const checked = [];
+        for(const cellKey of this.collider.cells)
+        {
+            const cell = this.handler.collision.staticCells.get(cellKey);
+            if(!cell)
+                continue;
+            for(const s of cell)
+            {
+                if(checked.includes(s))
+                    continue;
+
+                const collision = this.checkForCollision(s);
+                if(collision)
+                    collisions.push(collision);
+                
+                checked.push(s);
+            }
+        }
+
+        return collisions;
     }
     checkForCollision(gameObj)
     {
@@ -995,6 +1021,9 @@ export class multiplayer
 export class player extends collisionGameObject
 {
     speed = 3;
+    climbSpeed = 1;
+    climbCollider = null;
+    climbing = false;
     animationMixer = null;
     poseActions = {};
     currentPose = poses.Stand;
@@ -1147,7 +1176,8 @@ export class player extends collisionGameObject
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
             this.cameraRoot.remove(this.headMesh);
 
-            this.setCollider(0.3, 2, new THREE.Vector3(0, 0, 1), false);
+            this.setCollider(0.3, 2, new THREE.Vector3(), false);
+            this.climbCollider = new collisionGameObject(this.handler);
 
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 this.mesh.rotateZ(-e.deltaCoord.x * 2);
@@ -1155,11 +1185,6 @@ export class player extends collisionGameObject
                 this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
             });
             this.handler.input.subscribeToButton(this, "r", KEY_PRESSED, () => this.setRed(!this.red));
-            this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => {
-                const pos = this.getPos();
-                this.gravity = 0;
-                this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + 5));
-            });
             this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
                 if(this.insidePlacedDoll)
                     return;
@@ -1170,6 +1195,8 @@ export class player extends collisionGameObject
                 });
                 this.insidePlacedDoll = true;
             });
+            this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
+            this.handler.input.subscribeToButton(this, " ", KEY_RELEASED, () => { this.climbing = false; })
             this.handler.input.subscribeToButton(this, "1", KEY_PRESSED, () => { this.setPose("Stand"); });
             this.handler.input.subscribeToButton(this, "2", KEY_PRESSED, () => { this.setPose("Droop"); });
             this.handler.input.subscribeToButton(this, "3", KEY_PRESSED, () => { this.setPose("TPose"); });
@@ -1208,13 +1235,31 @@ export class player extends collisionGameObject
             this.addPos(movement.multiplyScalar(this.speed * dt));
         }
 
+        if(this.climbing)
+        {
+            const pos = this.getPos();
+            this.climbCollider.setPos(pos);
+            this.climbCollider.mesh.rotation.z = this.mesh.rotation.z;
+            const bottomPos = new THREE.Vector3(this.collider.pos.x, this.collider.pos.y, this.collider.pos.z - this.collider.height / 2);
+            this.climbCollider.setCollider(this.collider.radius + 0.2, this.collider.height, bottomPos, false, false);
+            if(this.insidePlacedDoll || this.climbCollider.checkForCollisionsInCells().length > 0)
+            {
+                this.gravity = 0;
+                this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + this.climbSpeed * dt));
+            }
+        }
+
         //gravity
         const groundedZ = this.groundLevel;
         if(this.pos.z > groundedZ)
         {
-            this.gravity += 1 * dt;
-            const newZ = Math.max(groundedZ, this.pos.z - this.gravity);
-            this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
+            if(this.gravity > 0)
+            {
+                const newZ = Math.max(groundedZ, this.pos.z - this.gravity);
+                this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
+            }
+
+            this.gravity += dt;
 
             if(this.pos.z <= groundedZ)
                 this.gravity = 0;
@@ -1262,8 +1307,7 @@ export class placedDoll extends collisionGameObject
             mixer.clipAction(clip).play();
             mixer.update(0);
             this.pose = poses[poseStr];
-            this.setColliderFromPose(this.pose, true);
-            this.setColliderActive(false);
+            this.setColliderFromPose(this.pose, true, false);
         });
     }
     tick(dt, time)
