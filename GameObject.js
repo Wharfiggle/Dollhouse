@@ -797,8 +797,9 @@ export class input
     dpr = 1;
     held = [];
     buttonSubscribers = {};
+    touchSubscribers = [new Map(), new Map()];
     cursorMoveSubscribers = new Map();
-    prevTouch = new THREE.Vector2();
+    prevTouch = new Map();
     constructor(w, h, dpr)
     {
         this.w = w;
@@ -823,17 +824,31 @@ export class input
         //touch input
         document.addEventListener("touchstart", (event) => {
             event.preventDefault();
-            const touchEvent = event.touches[0];
-            this.prevTouch = new THREE.Vector2(touchEvent.clientX, touchEvent.clientY);
-            this.cursorMoveEvent(touchEvent);
+            for(const touch of event.touches)
+            {
+                const pos = new THREE.Vector2(touch.clientX, touch.clientY);
+                this.prevTouch.set(touch.identifier, pos);
+                this.cursorMoveEvent(touch, null, touch.identifier, pos);
+                this.touchEvent(touch, false);
+            }
         }, { passive: false });
         document.addEventListener("touchmove", (event) => {
             event.preventDefault();
-            const touchEvent = event.touches[0];
-            const pos = new THREE.Vector2(touchEvent.clientX, touchEvent.clientY);
-            const deltaPos = pos.clone().sub(this.prevTouch)
-            this.prevTouch = pos.clone();
-            this.cursorMoveEvent(touchEvent, deltaPos);
+            for(const touch of event.touches)
+            {
+                const pos = new THREE.Vector2(touch.clientX, touch.clientY);
+                const prevPos = this.prevTouch.get(touch.identifier) ?? new THREE.Vector2();
+                const deltaPos = pos.clone().sub(prevPos);
+                this.prevTouch.set(touch.identifier, pos);
+                this.cursorMoveEvent(touch, deltaPos, touch.identifier);
+            }
+        }, { passive: false });
+        document.addEventListener("touchend", (event) => {
+            event.preventDefault();
+            for(const touch of event.changedTouches)
+            {
+                this.touchEvent(touch, true);
+            }
         }, { passive: false });
 
         //receive mouse information from parent page
@@ -861,7 +876,7 @@ export class input
             sub.callback();
         }
     }
-    cursorMoveEvent(event, deltaPos = null)
+    cursorMoveEvent(event, deltaPos = null, touchIdentifier = null)
     {
         //calculate commonly needed cursor information
         const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
@@ -878,7 +893,19 @@ export class input
         //call callbacks of subscribers
         for(const [gameObj, sub] of this.cursorMoveSubscribers)
         {
-            sub.callback({ pos: pos, deltaPos: deltaPos, coord: coord, deltaCoord: deltaCoord });
+            sub.callback({ pos: pos, deltaPos: deltaPos, coord: coord, deltaCoord: deltaCoord, touchIdentifier: touchIdentifier });
+        }
+    }
+    touchEvent(event, released)
+    {
+        const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
+        const coord = new THREE.Vector2(
+            (event.clientX / this.w) * 2 - 1,
+            (event.clientY / this.h) * 2 - 1
+        );
+        for(const [gameObj, sub] of this.touchSubscribers[released ? 1 : 0])
+        {
+            sub.callback({ pos: pos, coord: coord, touchIdentifier: event.identifier, released: released });
         }
     }
     subscribeToButton(gameObj, inputStr, released, callback)
@@ -888,8 +915,6 @@ export class input
         this.buttonSubscribers[str] ??= [[],[]];
         this.buttonSubscribers[str][released ? 1 : 0].push({ gameObj: gameObj, callback: callback });
     }
-    subscribeToCursorMove(gameObj, callback) { this.cursorMoveSubscribers.set(gameObj, { callback: callback }); }
-    unsubscribeFromCursorMove(gameObj) { this.cursorMoveSubscribers.delete(gameObj); }
     unsubscribeFromButton(inputStr, released, gameObj)
     {
         const str = inputStr.toLowerCase();
@@ -906,10 +931,20 @@ export class input
             }
         }
     }
+    subscribeToCursorMove(gameObj, callback) { this.cursorMoveSubscribers.set(gameObj, { callback: callback }); }
+    unsubscribeFromCursorMove(gameObj) { this.cursorMoveSubscribers.delete(gameObj); }
+    subscribeToTouch(gameObj, released, callback) { this.touchSubscribers[released ? 1 : 0].set(gameObj, { callback: callback }); }
+    unsubcribeFromTouch(gameObj, released) { this.touchSubscribers[released ? 1 : 0].delete(gameObj); }
+    unsubscriberFromAllTouch(gameObj)
+    {
+        this.touchSubscribers[0].delete(gameObj);
+        this.touchSubscribers[1].delete(gameObj);
+    }
     unsubscribeFromAllInput(gameObj)
     {
         this.unsubscribeFromAllButtons(gameObj);
         this.unsubscribeFromCursorMove(gameObj);
+        this.unsubscribeFromAllTouch(gameObj);
     }
     isHeld(inputStr){ return this.held.includes(inputStr.toLowerCase()); }
     updateScreenVars(w, h, dpr)
@@ -1030,6 +1065,9 @@ export class player extends collisionGameObject
     cameraRoot = new THREE.Object3D();
     id = 0;
     controlled = false;
+    moveInput = new THREE.Vector2();
+    touchMoveIdentifier = null;
+    touchMoveStart = null;
     headMesh = null;
     playerMesh = null;
     red = false;
@@ -1179,10 +1217,34 @@ export class player extends collisionGameObject
             this.setCollider(0.3, 2, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
 
+            this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
+                if(e.coord.x < 0)
+                {
+                    this.touchMoveIdentifier = e.touchIdentifier;
+                    this.touchMoveStart = e.pos.clone();
+                }
+            });
+            this.handler.input.subscribeToTouch(this, KEY_RELEASED, (e) => {
+                if(e.touchIdentifier == this.touchMoveIdentifier)
+                {
+                    this.touchMoveIdentifier = null;
+                    this.touchMoveStart = null;
+                    this.moveInput = new THREE.Vector2();
+                }
+            })
             this.handler.input.subscribeToCursorMove(this, (e) => {
-                this.mesh.rotateZ(-e.deltaCoord.x * 2);
-                this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
-                this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
+                if(e.touchIdentifier != null && e.touchIdentifier == this.touchMoveIdentifier)
+                {
+                    const delta = this.touchMoveStart.clone().sub(e.pos);
+                    this.moveInput.copy(new THREE.Vector2(-delta.x, delta.y));
+                }
+                else
+                {
+                    this.mesh.rotateZ(-e.deltaCoord.x * 2);
+                    this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
+                    //clamp camera to not roll backwards
+                    this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
+                }   
             });
             this.handler.input.subscribeToButton(this, "r", KEY_PRESSED, () => this.setRed(!this.red));
             this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
@@ -1214,17 +1276,17 @@ export class player extends collisionGameObject
             return;
 
         //calculate movement direction
-        const moveInput = new THREE.Vector2();
-        if(this.handler.input.isHeld('w')) moveInput.y += 1;
-        if(this.handler.input.isHeld('s')) moveInput.y -= 1;
-        if(this.handler.input.isHeld('d')) moveInput.x += 1;
-        if(this.handler.input.isHeld('a')) moveInput.x -= 1;
-        if(moveInput.length() > 0)
+        const moveIn = this.moveInput.clone();
+        if(this.handler.input.isHeld('w')) moveIn.y += 1;
+        if(this.handler.input.isHeld('s')) moveIn.y -= 1;
+        if(this.handler.input.isHeld('d')) moveIn.x += 1;
+        if(this.handler.input.isHeld('a')) moveIn.x -= 1;
+        if(moveIn.length() > 0)
         {
             const pos = this.getPos();
             const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
             forwardVector.applyQuaternion(this.mesh.quaternion);
-            const ang = Math.atan2(moveInput.y, moveInput.x) - Math.PI / 2;
+            const ang = Math.atan2(moveIn.y, moveIn.x) - Math.PI / 2;
             //rotate forwardVector by angle of moveInput to get movement direction
             const movement = new THREE.Vector3(
                 Math.cos(ang) * forwardVector.x - Math.sin(ang) * forwardVector.y,
@@ -1266,6 +1328,15 @@ export class player extends collisionGameObject
         }
 
         this.setPos(clampVec3(this.getPos(), -MAX_METERS, MAX_METERS));
+
+        if(this.touchMoveStart)
+        {
+            this.ui.beginPath();
+            this.ui.arc(this.touchMoveStart.x, this.touchMoveStart.y, 30, 0, 2 * Math.PI);
+            this.ui.lineWidth = 5;
+            this.ui.strokeStyle = `rgba(100, 100, 100, 0.5)`;
+            this.ui.stroke();
+        }
 
         super.tick();
     }
