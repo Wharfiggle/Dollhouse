@@ -1218,7 +1218,7 @@ export class player extends collisionGameObject
             this.climbCollider = new collisionGameObject(this.handler);
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
-                if(e.coord.x < 0)
+                if(!this.touchMoveStart && e.coord.x < 0)
                 {
                     this.touchMoveIdentifier = e.touchIdentifier;
                     this.touchMoveStart = e.pos.clone();
@@ -1331,10 +1331,10 @@ export class player extends collisionGameObject
 
         if(this.touchMoveStart)
         {
-            this.ui.beginPath();
-            this.ui.arc(this.touchMoveStart.x, this.touchMoveStart.y, 30, 0, 2 * Math.PI);
             this.ui.lineWidth = 5;
             this.ui.strokeStyle = `rgba(100, 100, 100, 0.5)`;
+            this.ui.beginPath();
+            this.ui.arc(this.touchMoveStart.x / dpi, this.touchMoveStart.y / dpi, 30, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
