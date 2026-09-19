@@ -2,6 +2,8 @@ import * as THREE from "three";
 import * as GameObject from "./GameObject.js";
 import { getMaterials } from "./Shaders.js";
 
+const UI_SCALE_HEIGHT = 1000;
+
 window.addEventListener("load", () => {
     if("requestIdleCallback" in window)
         requestIdleCallback(loadGame);
@@ -122,6 +124,7 @@ function loadGame()
         w = window.innerWidth;
         h = window.innerHeight;
         renderer.setSize(w, h);
+        
         canvas.style.width = w + "px";
         canvas.style.height = h + "px";
         canvas.width = w * dpr;
@@ -129,6 +132,8 @@ function loadGame()
         ui.setTransform(dpr, 0, 0, dpr, 0, 0);
         ui.width = w;
         ui.height = h;
+        ui.uiScale = h / UI_SCALE_HEIGHT;
+        
         ghostCanvas.style.width = w + "px";
         ghostCanvas.style.height = h + "px";
         ghostCanvas.width = w * dpr;
@@ -136,6 +141,8 @@ function loadGame()
         ghostUi.setTransform(dpr, 0, 0, dpr, 0, 0);
         ghostUi.width = w;
         ghostUi.height = h;
+        ghostUi.uiScale = h / UI_SCALE_HEIGHT;
+        
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         input.updateScreenVars(w, h, dpr);

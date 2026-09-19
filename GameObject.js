@@ -6,8 +6,6 @@ import * as SkeletonUtils from "jsm/utils/SkeletonUtils.js";
 const KEY_RELEASED = true;
 const KEY_PRESSED = false;
 
-const UI_SCALE_HEIGHT = 1000;
-
 const MAX_METERS = 327;
 
 let dpr = window.devicePixelRatio || 1;
@@ -1057,6 +1055,11 @@ export class player extends collisionGameObject
 {
     speed = 3;
     climbSpeed = 1;
+    touchMove = {
+        maxDist: 75,
+        identifier: null,
+        start: null
+    }
     climbCollider = null;
     climbing = false;
     animationMixer = null;
@@ -1066,8 +1069,6 @@ export class player extends collisionGameObject
     id = 0;
     controlled = false;
     moveInput = new THREE.Vector2();
-    touchMoveIdentifier = null;
-    touchMoveStart = null;
     headMesh = null;
     playerMesh = null;
     red = false;
@@ -1077,6 +1078,8 @@ export class player extends collisionGameObject
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
+
+        this.touchMove.maxDist *= this.handler.ui.uiScale;
 
         this.mesh.add(this.cameraRoot);
         this.headMesh = this.handler.meshes.playerHead.clone();
@@ -1218,30 +1221,31 @@ export class player extends collisionGameObject
             this.climbCollider = new collisionGameObject(this.handler);
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
-                if(!this.touchMoveStart && e.coord.x < 0)
+                if(!this.touchMove.start && e.coord.x < 0)
                 {
-                    this.touchMoveIdentifier = e.touchIdentifier;
-                    this.touchMoveStart = e.pos.clone();
+                    this.touchMove.identifier = e.touchIdentifier;
+                    this.touchMove.start = e.pos.clone();
                 }
             });
             this.handler.input.subscribeToTouch(this, KEY_RELEASED, (e) => {
-                if(e.touchIdentifier == this.touchMoveIdentifier)
+                if(e.touchIdentifier == this.touchMove.identifier)
                 {
-                    this.touchMoveIdentifier = null;
-                    this.touchMoveStart = null;
+                    this.touchMove.identifier = null;
+                    this.touchMove.start = null;
                     this.moveInput = new THREE.Vector2();
                 }
             })
             this.handler.input.subscribeToCursorMove(this, (e) => {
-                if(e.touchIdentifier != null && e.touchIdentifier == this.touchMoveIdentifier)
+                if(e.touchIdentifier != null && e.touchIdentifier == this.touchMove.identifier)
                 {
-                    const delta = this.touchMoveStart.clone().sub(e.pos);
-                    this.moveInput.copy(new THREE.Vector2(-delta.x, delta.y));
+                    const delta = this.touchMove.start.clone().sub(e.pos);
+                    this.moveInput = new THREE.Vector2(-delta.x, delta.y);
+                    this.moveInput.clampLength(0, this.touchMove.maxDist);
                 }
                 else
                 {
-                    this.mesh.rotateZ(-e.deltaCoord.x * 2);
-                    this.cameraRoot.rotateX(-e.deltaCoord.y * 2);
+                    this.mesh.rotateZ(-e.deltaCoord.x * 4);
+                    this.cameraRoot.rotateX(-e.deltaCoord.y * 4);
                     //clamp camera to not roll backwards
                     this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
                 }   
@@ -1276,14 +1280,15 @@ export class player extends collisionGameObject
             return;
 
         //calculate movement direction
-        const moveIn = this.moveInput.clone();
-        if(this.handler.input.isHeld('w')) moveIn.y += 1;
-        if(this.handler.input.isHeld('s')) moveIn.y -= 1;
-        if(this.handler.input.isHeld('d')) moveIn.x += 1;
-        if(this.handler.input.isHeld('a')) moveIn.x -= 1;
+        const moveKey = new THREE.Vector2();
+        if(this.handler.input.isHeld('w')) moveKey.y += 1;
+        if(this.handler.input.isHeld('s')) moveKey.y -= 1;
+        if(this.handler.input.isHeld('d')) moveKey.x += 1;
+        if(this.handler.input.isHeld('a')) moveKey.x -= 1;
+        moveKey.normalize();
+        const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist));
         if(moveIn.length() > 0)
         {
-            const pos = this.getPos();
             const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
             forwardVector.applyQuaternion(this.mesh.quaternion);
             const ang = Math.atan2(moveIn.y, moveIn.x) - Math.PI / 2;
@@ -1294,7 +1299,7 @@ export class player extends collisionGameObject
                 0
             )
 
-            this.addPos(movement.multiplyScalar(this.speed * dt));
+            this.addPos(movement.multiplyScalar(this.speed * dt * Math.min(1, moveIn.length())));
         }
 
         if(this.climbing)
@@ -1329,12 +1334,18 @@ export class player extends collisionGameObject
 
         this.setPos(clampVec3(this.getPos(), -MAX_METERS, MAX_METERS));
 
-        if(this.touchMoveStart)
+        if(this.touchMove.start)
         {
-            this.ui.lineWidth = 5;
-            this.ui.strokeStyle = `rgba(100, 100, 100, 0.5)`;
+            const stickRadius = 50 * this.ui.uiScale;
+
+            this.ui.lineWidth = 5 * this.ui.uiScale;
+            this.ui.strokeStyle = `rgba(150, 150, 150, 0.5)`;
             this.ui.beginPath();
-            this.ui.arc(this.touchMoveStart.x / dpr, this.touchMoveStart.y / dpr, 30, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x / dpr + this.moveInput.x, this.touchMove.start.y / dpr - this.moveInput.y, stickRadius, 0, 2 * Math.PI);
+            this.ui.stroke();
+            this.ui.lineWidth = 3 * this.ui.uiScale;
+            this.ui.beginPath();
+            this.ui.arc(this.touchMove.start.x / dpr, this.touchMove.start.y / dpr, this.touchMove.maxDist + stickRadius, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
