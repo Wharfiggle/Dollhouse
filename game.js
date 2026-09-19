@@ -132,7 +132,9 @@ function loadGame()
         ui.setTransform(dpr, 0, 0, dpr, 0, 0);
         ui.width = w;
         ui.height = h;
+        
         ui.uiScale = h / UI_SCALE_HEIGHT;
+        ui.dpr = dpr;
         
         ghostCanvas.style.width = w + "px";
         ghostCanvas.style.height = h + "px";
@@ -141,7 +143,6 @@ function loadGame()
         ghostUi.setTransform(dpr, 0, 0, dpr, 0, 0);
         ghostUi.width = w;
         ghostUi.height = h;
-        ghostUi.uiScale = h / UI_SCALE_HEIGHT;
         
         camera.aspect = w / h;
         camera.updateProjectionMatrix();

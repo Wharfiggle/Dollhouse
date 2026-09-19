@@ -8,13 +8,11 @@ const KEY_PRESSED = false;
 
 const MAX_METERS = 327;
 
-let dpr = window.devicePixelRatio || 1;
-
 //essentially an enum for sendingDatas
 const sendingDataIds = {
     xy: 0,
     z: 1,
-    yaw: 2,
+    targetYaw: 2,
     headPitch: 3,
     red: 4,
     pose: 5,
@@ -128,7 +126,6 @@ export class handler
     unshiftGameObjects = []; //used for adding gameObjects to the start of the list, useful for affecting draw order for ui
     tagGroups = {};
     materials = {};
-    camera = null;
     input = null;
     collision = null;
     multiplayer = null;
@@ -236,7 +233,11 @@ export class handler
         else
             this.gameObjects.push(gameObj);
     }
-    removeGameObject(gameObj) { this.removeGameObjects.push(gameObj); }
+    removeGameObject(gameObj)
+    {
+        this.removeGameObjects.push(gameObj);
+        gameObj.onRemove();
+    }
     removeMesh(mesh) { this.scene.remove(mesh); }
     tick(dt, time)
     {
@@ -475,6 +476,7 @@ export class gameObject extends EventTarget
             this.handler.scene.add(this.mesh);
         }
     }
+    onRemove() {}
 }
 
 export class collision
@@ -691,6 +693,8 @@ export class collisionGameObject extends gameObject
             checkFromYaw = this.mesh.rotation.z != this.prevYaw;
         if(checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
         {
+            this.grounded = false;
+
             //check for collisions from static colliders that share a cell with us
             const collisions = this.checkForCollisionsInCells();
             for(const c of collisions)
@@ -792,17 +796,15 @@ export class input
 {
     w = 0;
     h = 0;
-    dpr = 1;
     held = [];
     buttonSubscribers = {};
     touchSubscribers = [new Map(), new Map()];
     cursorMoveSubscribers = new Map();
     prevTouch = new Map();
-    constructor(w, h, dpr)
+    constructor(w, h)
     {
         this.w = w;
         this.h = h;
-        this.dpr = dpr;
 
         //mouse input
         document.addEventListener("mousemove", (event) => this.cursorMoveEvent(event));
@@ -877,7 +879,7 @@ export class input
     cursorMoveEvent(event, deltaPos = null, touchIdentifier = null)
     {
         //calculate commonly needed cursor information
-        const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
+        const pos = new THREE.Vector2(event.clientX, event.clientY);
         if(deltaPos == null)
             deltaPos = new THREE.Vector2(event.movementX, event.movementY);
 
@@ -896,7 +898,7 @@ export class input
     }
     touchEvent(event, released)
     {
-        const pos = new THREE.Vector2(event.clientX * dpr, event.clientY * dpr);
+        const pos = new THREE.Vector2(event.clientX, event.clientY);
         const coord = new THREE.Vector2(
             (event.clientX / this.w) * 2 - 1,
             (event.clientY / this.h) * 2 - 1
@@ -945,11 +947,10 @@ export class input
         this.unsubscribeFromAllTouch(gameObj);
     }
     isHeld(inputStr){ return this.held.includes(inputStr.toLowerCase()); }
-    updateScreenVars(w, h, dpr)
+    updateScreenVars(w, h)
     {
         this.w = w;
         this.h = h;
-        this.dpr = dpr;
     }
 }
 
@@ -1056,7 +1057,7 @@ export class player extends collisionGameObject
     speed = 3;
     climbSpeed = 1;
     touchMove = {
-        maxDist: 75,
+        maxDist: 125,
         identifier: null,
         start: null
     }
@@ -1065,14 +1066,18 @@ export class player extends collisionGameObject
     animationMixer = null;
     poseActions = {};
     currentPose = poses.Stand;
+    cameraOrbit = new THREE.Object3D();
     cameraRoot = new THREE.Object3D();
     id = 0;
     controlled = false;
     moveInput = new THREE.Vector2();
     headMesh = null;
     playerMesh = null;
+    meshYaw = Math.PI;
+    meshTargetYaw = Math.PI;
     red = false;
     gravity = 0;
+    grounded = false;
     placedDoll = null;
     insidePlacedDoll = false;
     constructor(args)
@@ -1081,11 +1086,14 @@ export class player extends collisionGameObject
 
         this.touchMove.maxDist *= this.handler.ui.uiScale;
 
-        this.mesh.add(this.cameraRoot);
+        this.mesh.add(this.cameraOrbit);
+        this.cameraOrbit.add(this.cameraRoot);
+        this.cameraOrbit.position.set(0, 0, 1);
         this.headMesh = this.handler.meshes.playerHead.clone();
         this.headMesh.material = this.headMesh.material.clone();
         this.cameraRoot.add(this.headMesh);
-        this.cameraRoot.position.set(0, -2, 3);
+        this.cameraRoot.position.set(0, -3, 3);
+        this.cameraRoot.rotateX(-Math.PI / 4);
 
         this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
             this.playerMesh = scene;
@@ -1093,8 +1101,9 @@ export class player extends collisionGameObject
                 if(obj.isMesh)
                     obj.material = this.handler.materials.player.clone();
             });
-            this.mesh.add(this.playerMesh);
-            this.playerMesh.rotateZ(Math.PI);
+            this.handler.scene.add(this.playerMesh);
+            this.playerMesh.rotateZ(this.meshYaw);
+            this.playerMesh.position.copy(this.getPos());
 
             this.animationMixer = new THREE.AnimationMixer(this.playerMesh);
             for(const key of Object.keys(poses))
@@ -1126,12 +1135,12 @@ export class player extends collisionGameObject
                 return t >= 1;
             });
 
-        this.addSendingData(sendingDataIds.yaw, "radians",
-            () => [this.mesh.rotation.z],
-            (toFormat) => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, toFormat[0])),
+        this.addSendingData(sendingDataIds.targetYaw, "radians",
+            () => [this.meshTargetYaw],
+            (toFormat) => toFormat[0],
             (data, t) => {
-                this.mesh.quaternion.slerpQuaternions(data.start, data.target, t);
-                return t >= 1;
+                this.meshTargetYaw = data.target;
+                return true;
             });
 
         this.addSendingData(sendingDataIds.headPitch, "radians",
@@ -1245,18 +1254,18 @@ export class player extends collisionGameObject
                 else
                 {
                     this.mesh.rotateZ(-e.deltaCoord.x * 4);
-                    this.cameraRoot.rotateX(-e.deltaCoord.y * 4);
+                    this.cameraOrbit.rotateX(-e.deltaCoord.y * 4);
                     //clamp camera to not roll backwards
-                    this.cameraRoot.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraRoot.rotation.x));
+                    this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.75, this.cameraOrbit.rotation.x));
                 }   
             });
             this.handler.input.subscribeToButton(this, "r", KEY_PRESSED, () => this.setRed(!this.red));
             this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
-                if(this.insidePlacedDoll)
+                if(!this.playerMesh || this.insidePlacedDoll)
                     return;
                 this.placedDoll = this.handler.newGameObject(placedDoll, {
                     pos: this.getPos(), 
-                    yaw: this.mesh.rotation.z, 
+                    yaw: this.meshYaw - Math.PI,
                     pose: this.currentPose.name, isLocal: true 
                 });
                 this.insidePlacedDoll = true;
@@ -1277,7 +1286,14 @@ export class player extends collisionGameObject
     tick(dt, time)
     {
         if(!this.isLocal)
+        {
+            if(this.playerMesh)
+            {
+                this.rotateMeshTowardsTargetYaw(dt);
+                this.playerMesh.position.copy(this.getPos());
+            }
             return;
+        }
 
         //calculate movement direction
         const moveKey = new THREE.Vector2();
@@ -1300,6 +1316,8 @@ export class player extends collisionGameObject
             )
 
             this.addPos(movement.multiplyScalar(this.speed * dt * Math.min(1, moveIn.length())));
+            this.meshTargetYaw = Math.atan2(movement.y, movement.x) + Math.PI / 2;
+            this.rotateMeshTowardsTargetYaw(dt);
         }
 
         if(this.climbing)
@@ -1311,51 +1329,84 @@ export class player extends collisionGameObject
             this.climbCollider.setCollider(this.collider.radius + 0.2, this.collider.height, bottomPos, false, false);
             if(this.insidePlacedDoll || this.climbCollider.checkForCollisionsInCells().length > 0)
             {
+                this.grounded = true;
                 this.gravity = 0;
                 this.setPos(new THREE.Vector3(pos.x, pos.y, pos.z + this.climbSpeed * dt));
             }
         }
 
         //gravity
-        const groundedZ = this.groundLevel;
-        if(this.pos.z > groundedZ)
+        if(!this.grounded && this.pos.z > this.groundLevel)
         {
-            if(this.gravity > 0)
-            {
-                const newZ = Math.max(groundedZ, this.pos.z - this.gravity);
-                this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
-            }
-
             this.gravity += dt;
+            const newZ = Math.max(this.groundLevel, this.pos.z - this.gravity);
+            this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
 
-            if(this.pos.z <= groundedZ)
+            if(this.pos.z <= this.groundLevel)
+            {
+                this.grounded = true;
                 this.gravity = 0;
+            }
         }
 
         this.setPos(clampVec3(this.getPos(), -MAX_METERS, MAX_METERS));
 
+        //camera pole arm, dont let camera go below floor
+        this.handler.camera.position.set(0, 0, 0);
+        const cameraWorldPos = new THREE.Vector3();
+        this.cameraRoot.getWorldPosition(cameraWorldPos);
+        if(cameraWorldPos.z < this.groundLevel)
+        {
+            const orbitWorldPos = new THREE.Vector3();
+            this.cameraOrbit.getWorldPosition(orbitWorldPos);
+            const direction = cameraWorldPos.clone().sub(orbitWorldPos);
+            const newLength = (this.groundLevel - orbitWorldPos.z) / direction.z;
+            const targetWorldPos = orbitWorldPos.clone().add(direction.multiplyScalar(newLength));
+            this.handler.camera.position.copy(this.cameraRoot.worldToLocal(targetWorldPos));
+        }
+
         if(this.touchMove.start)
         {
-            const stickRadius = 50 * this.ui.uiScale;
+            const stickRadius = 75 * this.ui.uiScale;
 
             this.ui.lineWidth = 5 * this.ui.uiScale;
             this.ui.strokeStyle = `rgba(150, 150, 150, 0.5)`;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x / dpr + this.moveInput.x, this.touchMove.start.y / dpr - this.moveInput.y, stickRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, stickRadius, 0, 2 * Math.PI);
             this.ui.stroke();
             this.ui.lineWidth = 3 * this.ui.uiScale;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x / dpr, this.touchMove.start.y / dpr, this.touchMove.maxDist + stickRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.maxDist + stickRadius, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
         super.tick();
+        if(this.playerMesh)
+            this.playerMesh.position.copy(this.getPos());
+    }
+    rotateMeshTowardsTargetYaw(dt)
+    {
+        if(this.playerMesh)
+        {
+            const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.meshTargetYaw, "XYZ"));
+            if(this.playerMesh.quaternion.angleTo(targetQuat) < 0.05)
+                this.playerMesh.quaternion.copy(targetQuat);
+            else
+                this.playerMesh.quaternion.slerp(targetQuat, 10 * dt);
+            this.meshYaw = this.playerMesh.rotation.z;
+        }
+        else
+            this.meshYaw = this.meshTargetYaw;
     }
     onCollision(correction)
     {
         if(correction.z > 0)
+        {
+            this.grounded = true;
             this.gravity = 0;
+        }
     }
+    onRemove() { this.handler.scene.remove(this.playerMesh); }
 }
 
 export class placedDoll extends collisionGameObject
@@ -1399,7 +1450,7 @@ export class placedDoll extends collisionGameObject
             this.activePlayer.insidePlacedDoll = false;
             this.solid = true;
             this.setColliderActive(true);
-            this.mesh.traverse((obj) => {
+            this.dollMesh.traverse((obj) => {
                 if(obj.isMesh)
                     obj.material = this.handler.materials.player;
             });
