@@ -1334,7 +1334,7 @@ export class player extends collisionGameObject
             this.ui.lineWidth = 5;
             this.ui.strokeStyle = `rgba(100, 100, 100, 0.5)`;
             this.ui.beginPath();
-            this.ui.arc(this.touchMoveStart.x / dpi, this.touchMoveStart.y / dpi, 30, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMoveStart.x / dpr, this.touchMoveStart.y / dpr, 30, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
