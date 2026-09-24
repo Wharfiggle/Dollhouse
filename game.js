@@ -94,6 +94,8 @@ function loadGame()
         lastTime = t;
         let time = t / 1000;
 
+        //console.log("FPS: " + Math.round(1 / dt));
+
         if(dpr != window.devicePixelRatio)
             handleWindowResize();
 

@@ -13,12 +13,10 @@ const sendingDataIds = {
     xy: 0,
     z: 1,
     targetYaw: 2,
-    headPitch: 3,
-    red: 4,
-    pose: 5,
-    placedDollPos: 6,
-    placedDollYaw: 7,
-    placedDollPose: 8
+    pose: 3,
+    placedDollPos: 4,
+    placedDollYaw: 5,
+    placedDollPose: 6
 };
 const poses = {
     Stand: { index: 0, collider: { radius: 0.3, height: 2, pos: new THREE.Vector3() } },
@@ -104,6 +102,7 @@ function lerpVec(vec1, vec2, t)
 }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+function clampVec2(vec, min, max) { return new THREE.Vector2(Math.max(min, Math.min(max, vec.x)), Math.max(min, Math.min(max, vec.y))); }
 function clampVec3(vec, min, max) { return new THREE.Vector3(Math.max(min, Math.min(max, vec.x)), Math.max(min, Math.min(max, vec.y)), Math.max(min, Math.min(max, vec.z))); }
 
 function worldToScreen(vector3, camera, screenWidth, screenHeight)
@@ -143,10 +142,6 @@ export class handler
         this.multiplayer.init(this);
 
         this.meshes = {
-            playerHead: new THREE.Mesh(
-                new THREE.ConeGeometry(0.25, 0.5, 4),
-                materials.player
-            ),
             ground: new THREE.Mesh(
                 new THREE.PlaneGeometry(20, 20),
                 materials.ground
@@ -298,6 +293,7 @@ export class gameObject extends EventTarget
     sendingData = {};
     lastSentData = {};
     catchUpData = {};
+    updateUTime = false;
     constructor(h = null, mesh = null, isLocal = true)
     {
         super();
@@ -309,17 +305,19 @@ export class gameObject extends EventTarget
     tick(dt, time)
     {
         //automatically set any uTime uniforms on materials of meshes
+        if(this.updateUTime)
+        {
+            if(!this.mesh)
+                return;
 
-        if(!this.mesh)
-            return;
-
-        this.mesh.traverse((mesh) => {
-            let uTime = mesh.material?.userData?.shader?.uniforms?.uTime;
-            if(!uTime)
-                uTime = mesh.material?.uniforms?.uTime;
-            if(!!uTime)
-                uTime.value = time;
-        });
+            this.mesh.traverse((mesh) => {
+                let uTime = mesh.material?.userData?.shader?.uniforms?.uTime;
+                if(!uTime)
+                    uTime = mesh.material?.uniforms?.uTime;
+                if(!!uTime)
+                    uTime.value = time;
+            });
+        }
     }
     addSendingData(id, unit, getter, format, catchUp)
     {
@@ -1057,7 +1055,9 @@ export class player extends collisionGameObject
     speed = 3;
     climbSpeed = 1;
     touchMove = {
-        maxDist: 125,
+        stickRadius: 50,
+        maxDist: 100,
+        outerRadius: 0,
         identifier: null,
         start: null
     }
@@ -1071,11 +1071,9 @@ export class player extends collisionGameObject
     id = 0;
     controlled = false;
     moveInput = new THREE.Vector2();
-    headMesh = null;
     playerMesh = null;
     meshYaw = Math.PI;
     meshTargetYaw = Math.PI;
-    red = false;
     gravity = 0;
     grounded = false;
     placedDoll = null;
@@ -1084,14 +1082,11 @@ export class player extends collisionGameObject
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
 
-        this.touchMove.maxDist *= this.handler.ui.uiScale;
+        this.touchMove.outerRadius = this.touchMove.stickRadius + this.touchMove.maxDist;
 
         this.mesh.add(this.cameraOrbit);
         this.cameraOrbit.add(this.cameraRoot);
         this.cameraOrbit.position.set(0, 0, 1);
-        this.headMesh = this.handler.meshes.playerHead.clone();
-        this.headMesh.material = this.headMesh.material.clone();
-        this.cameraRoot.add(this.headMesh);
         this.cameraRoot.position.set(0, -3, 3);
         this.cameraRoot.rotateX(-Math.PI / 4);
 
@@ -1140,22 +1135,6 @@ export class player extends collisionGameObject
             (toFormat) => toFormat[0],
             (data, t) => {
                 this.meshTargetYaw = data.target;
-                return true;
-            });
-
-        this.addSendingData(sendingDataIds.headPitch, "radians",
-            () => [this.cameraRoot.rotation.x],
-            (toFormat) => new THREE.Quaternion().setFromEuler(new THREE.Euler(toFormat[0], 0, 0)),
-            (data, t) => {
-                this.cameraRoot.quaternion.slerpQuaternions(data.start, data.target, t);
-                return t >= 1;
-            });
-
-        this.addSendingData(sendingDataIds.red, "",
-            () => [this.red],
-            (toFormat) => toFormat[0],
-            (data) => {
-                this.setRed(data.target);
                 return true;
             });
 
@@ -1208,15 +1187,6 @@ export class player extends collisionGameObject
         super.catchUp(sendInterval, dt, time);
         this.placedDoll = null;
     }
-    setRed(red)
-    {
-        if(red == this.red)
-            return;
-        this.red = red;
-        const color = red ? "red" : "purple";
-        this.playerMesh.material.color.set(color);
-        this.headMesh.material.color.set(color);
-    }
     setControlled(controlled)
     {
         if(controlled)
@@ -1224,7 +1194,6 @@ export class player extends collisionGameObject
             this.cameraRoot.add(this.handler.camera);
             this.handler.camera.position.set(0, 0, 0);
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
-            this.cameraRoot.remove(this.headMesh);
 
             this.setCollider(0.3, 2, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
@@ -1233,7 +1202,11 @@ export class player extends collisionGameObject
                 if(!this.touchMove.start && e.coord.x < 0)
                 {
                     this.touchMove.identifier = e.touchIdentifier;
-                    this.touchMove.start = e.pos.clone();
+                    const outr = this.touchMove.outerRadius * this.ui.uiScale;
+                    this.touchMove.start = new THREE.Vector2(
+                        Math.max(outr, Math.min(this.ui.canvas.width - outr, e.pos.x)),
+                        Math.max(outr, Math.min(this.ui.canvas.height - outr, e.pos.y))
+                    );
                 }
             });
             this.handler.input.subscribeToTouch(this, KEY_RELEASED, (e) => {
@@ -1249,17 +1222,17 @@ export class player extends collisionGameObject
                 {
                     const delta = this.touchMove.start.clone().sub(e.pos);
                     this.moveInput = new THREE.Vector2(-delta.x, delta.y);
-                    this.moveInput.clampLength(0, this.touchMove.maxDist);
+                    this.moveInput.clampLength(0, this.touchMove.maxDist * this.ui.uiScale);
                 }
                 else
                 {
-                    this.mesh.rotateZ(-e.deltaCoord.x * 4);
-                    this.cameraOrbit.rotateX(-e.deltaCoord.y * 4);
+
+                    this.mesh.rotateZ(-4 * e.deltaPos.x / this.ui.height);
+                    this.cameraOrbit.rotateX(-4 * e.deltaPos.y / this.ui.height);
                     //clamp camera to not roll backwards
-                    this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.75, this.cameraOrbit.rotation.x));
+                    this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.65, this.cameraOrbit.rotation.x));
                 }   
             });
-            this.handler.input.subscribeToButton(this, "r", KEY_PRESSED, () => this.setRed(!this.red));
             this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
                 if(!this.playerMesh || this.insidePlacedDoll)
                     return;
@@ -1278,10 +1251,7 @@ export class player extends collisionGameObject
             this.handler.input.subscribeToButton(this, "`", KEY_PRESSED, () => { this.handler.collision.setDebugDraw(!this.handler.collision.debugDraw); })
         }
         else
-        {
-            this.cameraRoot.add(this.headMesh);
             this.handler.input.unsubscribeFromAllInput(this);
-        }
     }
     tick(dt, time)
     {
@@ -1302,7 +1272,7 @@ export class player extends collisionGameObject
         if(this.handler.input.isHeld('d')) moveKey.x += 1;
         if(this.handler.input.isHeld('a')) moveKey.x -= 1;
         moveKey.normalize();
-        const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist));
+        const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist * this.ui.uiScale));
         if(moveIn.length() > 0)
         {
             const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
@@ -1319,6 +1289,8 @@ export class player extends collisionGameObject
             this.meshTargetYaw = Math.atan2(movement.y, movement.x) + Math.PI / 2;
             this.rotateMeshTowardsTargetYaw(dt);
         }
+        else if(this.playerMesh)
+            this.meshTargetYaw = this.playerMesh.rotation.z;
 
         if(this.climbing)
         {
@@ -1355,28 +1327,27 @@ export class player extends collisionGameObject
         this.handler.camera.position.set(0, 0, 0);
         const cameraWorldPos = new THREE.Vector3();
         this.cameraRoot.getWorldPosition(cameraWorldPos);
-        if(cameraWorldPos.z < this.groundLevel)
+        const cameraGround = this.groundLevel + 0.05;
+        if(cameraWorldPos.z < cameraGround)
         {
             const orbitWorldPos = new THREE.Vector3();
             this.cameraOrbit.getWorldPosition(orbitWorldPos);
             const direction = cameraWorldPos.clone().sub(orbitWorldPos);
-            const newLength = (this.groundLevel - orbitWorldPos.z) / direction.z;
+            const newLength = (cameraGround - orbitWorldPos.z) / direction.z;
             const targetWorldPos = orbitWorldPos.clone().add(direction.multiplyScalar(newLength));
             this.handler.camera.position.copy(this.cameraRoot.worldToLocal(targetWorldPos));
         }
 
         if(this.touchMove.start)
         {
-            const stickRadius = 75 * this.ui.uiScale;
-
             this.ui.lineWidth = 5 * this.ui.uiScale;
             this.ui.strokeStyle = `rgba(150, 150, 150, 0.5)`;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, stickRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, this.touchMove.stickRadius * this.ui.uiScale, 0, 2 * Math.PI);
             this.ui.stroke();
             this.ui.lineWidth = 3 * this.ui.uiScale;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.maxDist + stickRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.outerRadius * this.ui.uiScale, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
