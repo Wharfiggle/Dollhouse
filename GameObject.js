@@ -8,6 +8,8 @@ const KEY_PRESSED = false;
 
 const MAX_METERS = 327;
 
+const PLACE_TIME = 2;
+
 //essentially an enum for sendingDatas
 const sendingDataIds = {
     xy: 0,
@@ -1061,6 +1063,8 @@ export class player extends collisionGameObject
         identifier: null,
         start: null
     }
+    placeProgress = 0;
+    placeWaitForRelease = false;
     climbCollider = null;
     climbing = false;
     animationMixer = null;
@@ -1233,16 +1237,11 @@ export class player extends collisionGameObject
                     this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.65, this.cameraOrbit.rotation.x));
                 }   
             });
-            this.handler.input.subscribeToButton(this, "e", KEY_PRESSED, () => {
-                if(!this.playerMesh || this.insidePlacedDoll)
-                    return;
-                this.placedDoll = this.handler.newGameObject(placedDoll, {
-                    pos: this.getPos(), 
-                    yaw: this.meshYaw - Math.PI,
-                    pose: this.currentPose.name, isLocal: true 
-                });
-                this.insidePlacedDoll = true;
+            this.handler.input.subscribeToButton(this, "e", KEY_RELEASED, () => {
+                if(this.placeWaitForRelease)
+                    this.placeWaitForRelease = false;
             });
+                
             this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
             this.handler.input.subscribeToButton(this, " ", KEY_RELEASED, () => { this.climbing = false; })
             this.handler.input.subscribeToButton(this, "1", KEY_PRESSED, () => { this.setPose("Stand"); });
@@ -1323,6 +1322,26 @@ export class player extends collisionGameObject
 
         this.setPos(clampVec3(this.getPos(), -MAX_METERS, MAX_METERS));
 
+        //hold place button for full duration then place doll
+        if(this.handler.input.isHeld("e") && this.playerMesh && !this.insidePlacedDoll && !this.placeWaitForRelease)
+        {
+            this.placeProgress += dt;
+
+            if(this.placeProgress > PLACE_TIME)
+            {
+                this.placedDoll = this.handler.newGameObject(placedDoll, {
+                    pos: this.getPos(), 
+                    yaw: this.meshYaw - Math.PI,
+                    pose: this.currentPose.name, isLocal: true 
+                });
+                this.insidePlacedDoll = true;
+                this.placeWaitForRelease = true;
+                this.placeProgress = 0;
+            }
+        }
+        else if(this.placeProgress > 0)
+            this.placeProgress = Math.max(0, this.placeProgress - dt);
+
         //camera pole arm, dont let camera go below floor
         this.handler.camera.position.set(0, 0, 0);
         const cameraWorldPos = new THREE.Vector3();
@@ -1338,16 +1357,31 @@ export class player extends collisionGameObject
             this.handler.camera.position.copy(this.cameraRoot.worldToLocal(targetWorldPos));
         }
 
+        //draw touch move stick
         if(this.touchMove.start)
         {
-            this.ui.lineWidth = 5 * this.ui.uiScale;
-            this.ui.strokeStyle = `rgba(150, 150, 150, 0.5)`;
+            this.ui.lineWidth = 5;
+            this.ui.strokeStyle = "rgba(150, 150, 150, 0.5)";
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, this.touchMove.stickRadius * this.ui.uiScale, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x + this.moveInput.x * this.ui.dpr, this.touchMove.start.y - this.moveInput.y * this.ui.dpr, this.touchMove.stickRadius, 0, 2 * Math.PI);
             this.ui.stroke();
-            this.ui.lineWidth = 3 * this.ui.uiScale;
+            this.ui.lineWidth = 3;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.outerRadius * this.ui.uiScale, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.outerRadius, 0, 2 * Math.PI);
+            this.ui.stroke();
+        }
+
+        //draw place progress bar
+        if(this.placeProgress > 0)
+        {
+            this.ui.lineWidth = 15 * this.ui.uiScale;
+            this.ui.strokeStyle = "rgba(50, 75, 50, 0.8)";
+            this.ui.beginPath();
+            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.uiScale, 0, 2 * Math.PI);
+            this.ui.stroke();
+            this.ui.strokeStyle = "rgba(205, 255, 205, 0.8)";
+            this.ui.beginPath();
+            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.uiScale, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * this.placeProgress / PLACE_TIME);
             this.ui.stroke();
         }
 
