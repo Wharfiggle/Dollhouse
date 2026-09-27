@@ -1206,7 +1206,7 @@ export class player extends collisionGameObject
                 if(!this.touchMove.start && e.coord.x < 0)
                 {
                     this.touchMove.identifier = e.touchIdentifier;
-                    const outr = this.touchMove.outerRadius * this.ui.uiScale;
+                    const outr = this.touchMove.outerRadius * this.ui.wScale;
                     this.touchMove.start = new THREE.Vector2(
                         Math.max(outr, Math.min(this.ui.canvas.width - outr, e.pos.x)),
                         Math.max(outr, Math.min(this.ui.canvas.height - outr, e.pos.y))
@@ -1226,7 +1226,7 @@ export class player extends collisionGameObject
                 {
                     const delta = this.touchMove.start.clone().sub(e.pos);
                     this.moveInput = new THREE.Vector2(-delta.x, delta.y);
-                    this.moveInput.clampLength(0, this.touchMove.maxDist * this.ui.uiScale);
+                    this.moveInput.clampLength(0, this.touchMove.maxDist * this.ui.wScale);
                 }
                 else
                 {
@@ -1271,7 +1271,7 @@ export class player extends collisionGameObject
         if(this.handler.input.isHeld('d')) moveKey.x += 1;
         if(this.handler.input.isHeld('a')) moveKey.x -= 1;
         moveKey.normalize();
-        const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist * this.ui.uiScale));
+        const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist * this.ui.wScale));
         if(moveIn.length() > 0)
         {
             const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
@@ -1360,28 +1360,28 @@ export class player extends collisionGameObject
         //draw touch move stick
         if(this.touchMove.start)
         {
-            this.ui.lineWidth = 5;
+            this.ui.lineWidth = 5 * this.ui.wScale;
             this.ui.strokeStyle = "rgba(150, 150, 150, 0.5)";
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x + this.moveInput.x * this.ui.dpr, this.touchMove.start.y - this.moveInput.y * this.ui.dpr, this.touchMove.stickRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, this.touchMove.stickRadius * this.ui.wScale, 0, 2 * Math.PI);
             this.ui.stroke();
-            this.ui.lineWidth = 3;
+            this.ui.lineWidth = 3 * this.ui.wScale;
             this.ui.beginPath();
-            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.outerRadius, 0, 2 * Math.PI);
+            this.ui.arc(this.touchMove.start.x, this.touchMove.start.y, this.touchMove.outerRadius * this.ui.wScale, 0, 2 * Math.PI);
             this.ui.stroke();
         }
 
         //draw place progress bar
         if(this.placeProgress > 0)
         {
-            this.ui.lineWidth = 15 * this.ui.uiScale;
+            this.ui.lineWidth = 15 * this.ui.hScale;
             this.ui.strokeStyle = "rgba(50, 75, 50, 0.8)";
             this.ui.beginPath();
-            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.uiScale, 0, 2 * Math.PI);
+            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.hScale, 0, 2 * Math.PI);
             this.ui.stroke();
             this.ui.strokeStyle = "rgba(205, 255, 205, 0.8)";
             this.ui.beginPath();
-            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.uiScale, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * this.placeProgress / PLACE_TIME);
+            this.ui.arc(this.ui.width / 2, this.ui.height / 2, 60 * this.ui.hScale, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * this.placeProgress / PLACE_TIME);
             this.ui.stroke();
         }
 

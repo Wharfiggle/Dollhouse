@@ -135,7 +135,8 @@ function loadGame()
         ui.width = w;
         ui.height = h;
         
-        ui.uiScale = h / UI_SCALE_HEIGHT;
+        ui.wScale = w / UI_SCALE_HEIGHT;
+        ui.hScale = h / UI_SCALE_HEIGHT;
         ui.dpr = dpr;
         
         ghostCanvas.style.width = w + "px";
