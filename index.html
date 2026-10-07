@@ -6,8 +6,10 @@
         <title>Dollhouse</title>
         <style>
             body { margin: 0; }
-            #container { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden }
-            #three, #ui, #ghostui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+            #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
+            #three, #ui, #ghostui { position:absolute; top:0; left:0; width:100%; height:100%; }
+            #buttonHolder { pointer-events:none; display:flex; position:absolute; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vw; }
+            .button { pointer-events:auto; display:flex; user-select:none; width:10vw; height:10vw; background-color:rgba(128, 128, 128, 1.0); align-items:center; justify-content:center }
         </style>
         <script type="importmap">
             {
@@ -24,7 +26,27 @@
             <canvas id="three" touch-action="none"></canvas>
             <canvas id="ghostui" touch-action="none"></canvas>
             <canvas id="ui" touch-action="none"></canvas>
+
+            <div id="buttonHolder">
+                <div class="button" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')">Place</div>
+                <div class="button" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')">Pose</div>
+                <div class="button" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')">Up</div>
+            </div>
         </div>
         <script type="module" src="game.js"></script>
     </body>
+    <script>
+        function startTouch(event, key)
+        {
+            event.preventDefault();
+            event.stopPropagation();
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: key } ));
+        }
+        function stopTouch(event, key)
+        {
+            event.preventDefault();
+            event.stopPropagation();
+            window.dispatchEvent(new KeyboardEvent("keyup", { key: key } ));
+        }
+    </script>
 </html>

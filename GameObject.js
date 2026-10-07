@@ -796,23 +796,25 @@ export class input
 {
     w = 0;
     h = 0;
+    canvas = null;
     held = [];
     buttonSubscribers = {};
     touchSubscribers = [new Map(), new Map()];
     cursorMoveSubscribers = new Map();
     prevTouch = new Map();
-    constructor(w, h)
+    constructor(w, h, canvas)
     {
         this.w = w;
         this.h = h;
+        this.canvas = canvas;
 
         //mouse input
-        document.addEventListener("mousemove", (event) => this.cursorMoveEvent(event));
-        document.addEventListener("mousedown", (event) => {
+        this.canvas.addEventListener("mousemove", (event) => this.cursorMoveEvent(event));
+        this.canvas.addEventListener("mousedown", (event) => {
             const key = ["leftmouse", "middlemouse", "rightmouse"][event.button];
             this.buttonEvent({key: key}, KEY_PRESSED);
         });
-        document.addEventListener("mouseup", (event) => {
+        this,canvas.addEventListener("mouseup", (event) => {
             const key = ["leftmouse", "middlemouse", "rightmouse"][event.button];
             this.buttonEvent({key: key}, KEY_RELEASED);
         })
@@ -822,7 +824,7 @@ export class input
         window.addEventListener("keyup", (event) => this.buttonEvent(event, KEY_RELEASED))
 
         //touch input
-        document.addEventListener("touchstart", (event) => {
+        this.canvas.addEventListener("touchstart", (event) => {
             event.preventDefault();
             for(const touch of event.touches)
             {
@@ -832,7 +834,7 @@ export class input
                 this.touchEvent(touch, false);
             }
         }, { passive: false });
-        document.addEventListener("touchmove", (event) => {
+        this.canvas.addEventListener("touchmove", (event) => {
             event.preventDefault();
             for(const touch of event.touches)
             {
@@ -843,19 +845,13 @@ export class input
                 this.cursorMoveEvent(touch, deltaPos, touch.identifier);
             }
         }, { passive: false });
-        document.addEventListener("touchend", (event) => {
+        this.canvas.addEventListener("touchend", (event) => {
             event.preventDefault();
             for(const touch of event.changedTouches)
             {
                 this.touchEvent(touch, true);
             }
         }, { passive: false });
-
-        //receive mouse information from parent page
-        window.addEventListener("message", (event) => {
-            if(event.data.type == "mouseEvent")
-                this.cursorMoveEvent(event.data);
-        });
     }
     buttonEvent(event, released)
     {
