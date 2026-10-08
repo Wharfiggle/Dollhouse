@@ -1059,6 +1059,7 @@ export class player extends collisionGameObject
         identifier: null,
         start: null
     }
+    touchLookIdentifier = null;
     placeProgress = 0;
     placeWaitForRelease = false;
     climbCollider = null;
@@ -1199,15 +1200,20 @@ export class player extends collisionGameObject
             this.climbCollider = new collisionGameObject(this.handler);
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
-                if(!this.touchMove.start && e.coord.x < 0)
+                if(e.coord.x < 0)
                 {
-                    this.touchMove.identifier = e.touchIdentifier;
-                    const outr = this.touchMove.outerRadius * this.ui.wScale;
-                    this.touchMove.start = new THREE.Vector2(
-                        Math.max(outr, Math.min(this.ui.canvas.width - outr, e.pos.x)),
-                        Math.max(outr, Math.min(this.ui.canvas.height - outr, e.pos.y))
-                    );
+                    if(!this.touchMove.start)
+                    {
+                        this.touchMove.identifier = e.touchIdentifier;
+                        const outr = this.touchMove.outerRadius * this.ui.wScale;
+                        this.touchMove.start = new THREE.Vector2(
+                            Math.max(outr, Math.min(this.ui.canvas.width - outr, e.pos.x)),
+                            Math.max(outr, Math.min(this.ui.canvas.height - outr, e.pos.y))
+                        );
+                    }
                 }
+                else if(this.touchLookIdentifier == null)
+                    this.touchLookIdentifier = e.touchIdentifier;
             });
             this.handler.input.subscribeToTouch(this, KEY_RELEASED, (e) => {
                 if(e.touchIdentifier == this.touchMove.identifier)
@@ -1216,6 +1222,8 @@ export class player extends collisionGameObject
                     this.touchMove.start = null;
                     this.moveInput = new THREE.Vector2();
                 }
+                else if(e.touchIdentifier == this.touchLookIdentifier)
+                    this.touchLookIdentifier = null;
             })
             this.handler.input.subscribeToCursorMove(this, (e) => {
                 if(e.touchIdentifier != null && e.touchIdentifier == this.touchMove.identifier)
@@ -1224,14 +1232,13 @@ export class player extends collisionGameObject
                     this.moveInput = new THREE.Vector2(-delta.x, delta.y);
                     this.moveInput.clampLength(0, this.touchMove.maxDist * this.ui.wScale);
                 }
-                else
+                else if(e.touchIdentifier == this.touchLookIdentifier)
                 {
-
                     this.mesh.rotateZ(-4 * e.deltaPos.x / this.ui.height);
                     this.cameraOrbit.rotateX(-4 * e.deltaPos.y / this.ui.height);
                     //clamp camera to not roll backwards
                     this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.65, this.cameraOrbit.rotation.x));
-                }   
+                }
             });
             this.handler.input.subscribeToButton(this, "e", KEY_RELEASED, () => {
                 if(this.placeWaitForRelease)
