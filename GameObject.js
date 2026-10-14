@@ -7,6 +7,7 @@ const KEY_RELEASED = true;
 const KEY_PRESSED = false;
 
 const MAX_METERS = 327;
+const MAX_METERS_DELTA = 1.28;
 
 const PLACE_TIME = 2;
 
@@ -370,7 +371,7 @@ export class gameObject extends EventTarget
             const value = sd.getter();
             if(value == null || value.length == 0 || value[0] == null)
             {
-                this.lastSentData[key] = [[],[]];
+                this.lastSentData[key] = [[],[],false];
                 continue;
             }
             const comp = compression[sd.unit];
@@ -379,7 +380,7 @@ export class gameObject extends EventTarget
             if(lsd == null) //haven't sent anything yet, send full value even if full is false
             {
                 data[key] = value;
-                this.lastSentData[key] = [value, value];
+                this.lastSentData[key] = [value, value, false];
                 full = true;
                 anyData = true;
             }
@@ -387,14 +388,15 @@ export class gameObject extends EventTarget
             {
                 const lastFull = lsd[0];
                 const lastSent = lsd[1];
-                //only send if value has changed or if all is true
-                if(all || !value.every((v, i) => v == lastSent[i]))
+                const lastWasDelta = lsd[2];
+                //only send if all is true, if we're sending full and the last sent was a delta, or if the value has changed
+                if(all || (full && lastWasDelta) || !value.every((v, i) => v == lastSent[i]))
                 {
                     let sentData = value;
                     if(sendDelta)
                         sentData = subArrays(value, lastFull);
                     data[key] = sentData;
-                    this.lastSentData[key] = [value, sentData]; //[full value, actual sent data (can be delta or full)]
+                    this.lastSentData[key] = [value, sentData, sendDelta]; //[full value, actual sent data (can be delta or full)]
                     anyData = true;
                 }
             }
@@ -1079,6 +1081,7 @@ export class player extends collisionGameObject
     grounded = false;
     placedDoll = null;
     insidePlacedDoll = false;
+    openMenu = false;
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
@@ -1234,6 +1237,9 @@ export class player extends collisionGameObject
                 }
                 else if(e.touchIdentifier == this.touchLookIdentifier)
                 {
+                    if(e.touchIdentifier == null && this.ui.canvas != document.pointerLockElement)
+                        return;
+
                     this.mesh.rotateZ(-4 * e.deltaPos.x / this.ui.height);
                     this.cameraOrbit.rotateX(-4 * e.deltaPos.y / this.ui.height);
                     //clamp camera to not roll backwards
@@ -1243,6 +1249,20 @@ export class player extends collisionGameObject
             this.handler.input.subscribeToButton(this, "e", KEY_RELEASED, () => {
                 if(this.placeWaitForRelease)
                     this.placeWaitForRelease = false;
+            });
+            this.handler.input.subscribeToButton(this, "q", KEY_PRESSED, () => {
+                this.openMenu = !this.openMenu;
+                const menuHolder = document.getElementById("menuHolder");
+                if(this.openMenu)
+                {
+                    document.exitPointerLock();
+                    menuHolder.style.display = "flex";
+                }
+                else
+                {
+                    this.ui.canvas.requestPointerLock();
+                    menuHolder.style.display = "none";
+                }
             });
                 
             this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
@@ -1312,7 +1332,7 @@ export class player extends collisionGameObject
         //gravity
         if(!this.grounded && this.pos.z > this.groundLevel)
         {
-            this.gravity += dt;
+            this.gravity = Math.min(MAX_METERS_DELTA * (1 / 60 / this.handler.multiplayer.sendInterval), this.gravity + dt);
             const newZ = Math.max(this.groundLevel, this.pos.z - this.gravity);
             this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
 
@@ -1346,7 +1366,8 @@ export class player extends collisionGameObject
             this.placeProgress = Math.max(0, this.placeProgress - dt);
 
         //camera pole arm, dont let camera go below floor
-        this.handler.camera.position.set(0, 0, 0);
+        const menuOffset = this.openMenu ? -this.handler.camera.aspect * 2 : 0;
+        this.handler.camera.position.set(menuOffset, 0, 0);
         const cameraWorldPos = new THREE.Vector3();
         this.cameraRoot.getWorldPosition(cameraWorldPos);
         const cameraGround = this.groundLevel + 0.05;
@@ -1355,16 +1376,17 @@ export class player extends collisionGameObject
             const orbitWorldPos = new THREE.Vector3();
             this.cameraOrbit.getWorldPosition(orbitWorldPos);
             const direction = cameraWorldPos.clone().sub(orbitWorldPos);
-            const newLength = (cameraGround - orbitWorldPos.z) / direction.z;
-            const targetWorldPos = orbitWorldPos.clone().add(direction.multiplyScalar(newLength));
+            const lengthMod = (cameraGround - orbitWorldPos.z) / direction.z;
+            const targetWorldPos = orbitWorldPos.clone().add(direction.clone().multiplyScalar(lengthMod));
             this.handler.camera.position.copy(this.cameraRoot.worldToLocal(targetWorldPos));
+            this.handler.camera.position.x = menuOffset * lengthMod;
         }
 
         //draw touch move stick
         if(this.touchMove.start)
         {
             this.ui.lineWidth = 5 * this.ui.wScale;
-            this.ui.strokeStyle = "rgba(150, 150, 150, 0.5)";
+            this.ui.strokeStyle = "rgba(0, 0, 0, 0.5)";
             this.ui.beginPath();
             this.ui.arc(this.touchMove.start.x + this.moveInput.x, this.touchMove.start.y - this.moveInput.y, this.touchMove.stickRadius * this.ui.wScale, 0, 2 * Math.PI);
             this.ui.stroke();
