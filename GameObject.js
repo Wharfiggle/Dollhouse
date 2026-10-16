@@ -1259,10 +1259,7 @@ export class player extends collisionGameObject
                     menuHolder.style.display = "flex";
                 }
                 else
-                {
-                    this.ui.canvas.requestPointerLock();
                     menuHolder.style.display = "none";
-                }
             });
                 
             this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
