@@ -7,8 +7,8 @@
         <style>
             body { margin: 0; }
             #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
-            #three, #ui, #ghostui { position:absolute; inset:0; width:100%; height:100% }
-            #overlay { pointer-events:none; display:flex; position:absolute; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
+            #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
+            #overlay { pointer-events:none; display:flex; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
             #buttonHolder { display:flex; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vw }
             #menuHolder { display:none; flex:1; inset:0; width:auto; height:auto; justify-content:start; align-items:center }
             #menuBox { display:flex; background-color:rgba(100,100,100,0.9); border-radius:5%; margin:10%; width:80%; height:80%; max-width:55vw; max-height:55vw }
