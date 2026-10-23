@@ -823,7 +823,9 @@ export class input
 
         //keyboard input
         window.addEventListener("keydown", (event) => this.buttonEvent(event, KEY_PRESSED));
-        window.addEventListener("keyup", (event) => this.buttonEvent(event, KEY_RELEASED))
+        window.addEventListener("simkeydown", (event) => this.buttonEvent(event, KEY_PRESSED));
+        window.addEventListener("keyup", (event) => this.buttonEvent(event, KEY_RELEASED));
+        window.addEventListener("simkeyup", (event) => this.buttonEvent(event, KEY_RELEASED));
 
         //touch input
         this.canvas.addEventListener("touchstart", (event) => {
@@ -1110,7 +1112,19 @@ export class player extends collisionGameObject
                 const clip = THREE.AnimationClip.findByName(animations, key);
                 this.poseActions[key] = this.animationMixer.clipAction(clip);
             }
-            this.setPose("Stand");
+            //this.setPose("Stand");
+
+            scene.traverse((obj) => {
+                if(obj.isSkinnedMesh)
+                {
+                    const bone = obj.skeleton.getBoneByName("Arm_Upper_Bone_L_06");
+                    bone.rotation.z = Math.PI;
+                    bone.rotation.y = Math.PI / 2;
+                    /*obj.skeleton.bones.forEach(bone => {
+                        console.log(bone.name);
+                    });*/
+                }
+            });
         });
 
         this.id = args.id ?? 0;
