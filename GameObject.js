@@ -1077,8 +1077,8 @@ export class player extends collisionGameObject
     controlled = false;
     moveInput = new THREE.Vector2();
     playerMesh = null;
-    meshYaw = Math.PI;
-    meshTargetYaw = Math.PI;
+    meshYaw = 0;
+    meshTargetYaw = 0;
     gravity = 0;
     grounded = false;
     placedDoll = null;
@@ -1096,7 +1096,7 @@ export class player extends collisionGameObject
         this.cameraRoot.position.set(0, -3, 3);
         this.cameraRoot.rotateX(-Math.PI / 4);
 
-        this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
+        this.handler.requestMesh("./PegMan.glb", (scene, animations) => {
             this.playerMesh = scene;
             this.playerMesh.traverse((obj) => {
                 if(obj.isMesh)
@@ -1319,7 +1319,7 @@ export class player extends collisionGameObject
             )
 
             this.addPos(movement.multiplyScalar(this.speed * dt * Math.min(1, moveIn.length())));
-            this.meshTargetYaw = Math.atan2(movement.y, movement.x) + Math.PI / 2;
+            this.meshTargetYaw = Math.atan2(movement.y, movement.x) - Math.PI / 2;
             this.rotateMeshTowardsTargetYaw(dt);
         }
         else if(this.playerMesh)
@@ -1468,7 +1468,7 @@ export class placedDoll extends collisionGameObject
     }
     setPose(poseStr)
     {
-        this.handler.requestMesh("./StumpyMannequin.glb", (scene, animations) => {
+        this.handler.requestMesh("./PegMan.glb", (scene, animations) => {
             this.dollMesh = scene;
             this.dollMesh.traverse((obj) => {
                 if(obj.isMesh)
