@@ -9,11 +9,11 @@
             #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
             #overlay { pointer-events:none; display:flex; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
-            #buttonHolder { display:flex; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vw }
-            #menuHolder { display:none; flex:1; inset:0; width:auto; height:auto; justify-content:start; padding-left:10%; align-items:center }
-            #menuBox { display:flex; background-color:rgba(100,100,100,0.9); border-radius:5%; width:min(80vh, 55vw); height:min(80vh, 55vw); }
+            #buttonHolder { display:flex; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vh }
+            #menuHolder { display:none; flex:1; inset:0; width:auto; height:auto; justify-content:start; align-items:center; padding:3vh; padding-top:5vh; padding-left:10%; }
+            #menuBox { display:flex; background-color:rgba(100,100,100,0.9); border-radius:5%; width:min(70vh, 55vw); height:min(70vh, 55vw); }
             .button { touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
-                width:20vw; height:20vw; max-width:20vh; max-height:20vh; background-color:rgba(100,100,100,0.5);
+                width:min(20vw, 20vh); height:min(20vw, 20vh); background-color:rgba(100,100,100,0.5);
                 border-style:solid; border-radius:10%; border-width:10%; border-color:black; 
                 font-size:min(5cqw, 5cqh); font-family:monospace; color:rgb(220,220,220); outline-width:10%; outline-color:white; }
             .pressed { background-color:rgba(200,200,200,0.5) }
