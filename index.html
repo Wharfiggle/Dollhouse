@@ -9,14 +9,17 @@
             #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
             #overlay { pointer-events:none; display:flex; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
-            #buttonHolder { display:flex; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vh }
+            #touchButtonHolder { display:flex; inset:0; width:auto; height:auto; align-items:end; justify-content:space-between; padding:1vh }
             #menuHolder { display:none; flex:1; inset:0; width:auto; height:auto; justify-content:start; align-items:center; padding:3vh; padding-top:5vh; padding-left:10%; }
-            #menuBox { display:flex; background-color:rgba(100,100,100,0.9); border-radius:5%; width:min(70vh, 55vw); height:min(70vh, 55vw); }
-            .button { touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
+            #menuBox { justify-content:space-between; container-type:size; background-color:rgba(100,100,100,0.9); border-radius:5%; width:min(70vh, 55vw); height:min(70vh, 55vw); }
+            #menuMan { container-type:size; display:grid; margin:5cqw; width:45cqw; height:90cqh; background-color:white; }
+            .touchButton { touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
                 width:min(20vw, 20vh); height:min(20vw, 20vh); background-color:rgba(100,100,100,0.5);
                 border-style:solid; border-radius:10%; border-width:10%; border-color:black; 
                 font-size:min(5cqw, 5cqh); font-family:monospace; color:rgb(220,220,220); outline-width:10%; outline-color:white; }
-            .pressed { background-color:rgba(200,200,200,0.5) }
+            .touchButton.pressed { background-color:rgba(200,200,200,0.5) }
+            .menuButton { position:absolute; grid-area:1/1; background-color:rgba(0,100,200,0.5); touch-action:none; border-radius:100%; width:20cqw; height:20cqw; transform:translate(-50%,-50%) }
+            .menuButton.pressed { background-color:rgba(100,200,255,0.75) }
             .mobileOnly { display:none }
         </style>
         <script type="importmap">
@@ -38,13 +41,20 @@
             <div id="overlay">
                 <div id="menuHolder">
                     <div id="menuBox">
-
+                        <div id="menuMan">
+                            <div class="menuButton" style="margin-left:50cqw; margin-top:20cqh"></div>
+                            <div class="menuButton" style="margin-left:15cqw; margin-top:25cqh"></div>
+                            <div class="menuButton" style="margin-left:85cqw; margin-top:25cqh"></div>
+                            <div class="menuButton" style="margin-left:50cqw; margin-top:50cqh"></div>
+                            <div class="menuButton" style="margin-left:25cqw; margin-top:75cqh"></div>
+                            <div class="menuButton" style="margin-left:75cqw; margin-top:75cqh"></div>
+                        </div>
                     </div>
                 </div>
-                <div class="mobileOnly" id="buttonHolder">
-                    <div class="mobileOnly button" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')">PLACE</div>
-                    <div class="mobileOnly button" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')">POSE</div>
-                    <div class="mobileOnly button" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')">UP</div>
+                <div class="mobileOnly" id="touchButtonHolder">
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')">PLACE</div>
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')">POSE</div>
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')">UP</div>
                 </div>
             </div>
         </div>
