@@ -1333,7 +1333,7 @@ export class player extends collisionGameObject
             this.placeProgress = Math.max(0, this.placeProgress - dt);
 
         //camera pole arm, dont let camera go below floor
-        const menuOffset = this.openMenu ? -this.handler.camera.aspect * 1.75 : 0;
+        const menuOffset = this.openMenu ? -this.handler.camera.aspect * 2 : 0;
         this.handler.camera.position.set(menuOffset, 0, 0);
         const cameraWorldPos = new THREE.Vector3();
         this.cameraRoot.getWorldPosition(cameraWorldPos);
