@@ -5,19 +5,24 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>Dollhouse</title>
         <style>
+            :root { 
+                --buttonSize: max(12dvw, 18dvh); 
+                --buttonSizeAndMargin: calc(var(--buttonSize) + 2dvh); 
+                --boxSize: min(65dvw, calc(98dvh - var(--buttonSizeAndMargin)));
+            }
             * { box-sizing: border-box; }
             body { margin: 0; }
             #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
             #overlay { pointer-events:none; display:flex; flex:1; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
             #menuHolder { display:none; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; padding-top:1dvh; padding-bottom:1dvh; }
-            #menuBox { display:flex; width:min(65dvw, 78dvh); height:min(65dvw, 78dvh); background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; }
+            #menuBox { display:flex; width:var(--boxSize); height:var(--boxSize); background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; }
             #menuMan { background-color:green; flex:1; }
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
-            .touchButton { touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
-                width:18dvh; height:18dvh; background-color:rgba(100,100,100,0.5);
-                border-style:solid; border-radius:10%; border-width:10%; border-color:black; margin:1dvh;
-                font-size:5cqh; font-family:monospace; color:rgb(220,220,220); outline-width:10%; outline-color:white; }
+            .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
+                width:var(--buttonSize); height:var(--buttonSize); margin:1dvh; 
+                background-color:rgba(100,100,100,0.5); border-style:solid; border-radius:10%; border-width:10%; border-color:black; }
+            h1 { font-size:30cqw; font-family:monospace; color:rgb(220,220,220); }
             .touchButton.pressed { background-color:rgba(200,200,200,0.5) }
             .mobileOnly { display:none }
         </style>
@@ -44,9 +49,9 @@
                     </div>
                 </div>
                 <div class="mobileOnly" id="touchButtonHolder">
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')">PLACE</div>
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')">POSE</div>
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')">UP</div>
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')"><h1>PLACE</h1></div>
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')"><h1>POSE</h1></div>
+                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')"><h1>UP</h1></div>
                 </div>
             </div>
         </div>
