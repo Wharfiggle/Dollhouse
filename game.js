@@ -80,12 +80,8 @@ function loadGame()
 
 
     //lock mouse when page is clicked
-    document.addEventListener("click", (event) => {
+    canvas.addEventListener("click", (event) => {
         canvas.requestPointerLock();
-    })
-    //fullscreen when page is tapped
-    document.addEventListener("touchstart", (event) => {
-        document.getElementById("container").requestFullscreen();
     })
 
     //tick

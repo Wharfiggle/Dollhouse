@@ -6,8 +6,8 @@
         <title>Dollhouse</title>
         <style>
             :root { 
-                --buttonSize: max(12dvw, 18dvh); 
-                --buttonSizeAndMargin: calc(var(--buttonSize) + 2dvh); 
+                --buttonSize: max(8dvw, 18dvh); 
+                --buttonSizeAndMargin: calc(var(--buttonSize) + 2dvh);
                 --boxSize: min(65dvw, calc(98dvh - var(--buttonSizeAndMargin)));
             }
             * { box-sizing: border-box; }
@@ -20,11 +20,20 @@
             #menuMan { background-color:green; flex:1; }
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
             .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
-                width:var(--buttonSize); height:var(--buttonSize); margin:1dvh; 
-                background-color:rgba(100,100,100,0.5); border-style:solid; border-radius:10%; border-width:10%; border-color:black; }
-            h1 { font-size:30cqw; font-family:monospace; color:rgb(220,220,220); }
-            .touchButton.pressed { background-color:rgba(200,200,200,0.5) }
+                width:var(--buttonSize); height:var(--buttonSize); margin:1dvh; transition:transform 0.05s ease-out;
+                background-color:rgb(80,80,80); border-style:solid; border-radius:20%; border-width:0.35rem; border-color:rgb(20,20,20); opacity:0.5; }
+            h1 { font-size:30cqw; font-family:monospace; color:rgb(200,200,200); }
+            .touchButton.pressed { opacity:0.75; transform:scale(0.9); transition:opacity 0.05s ease, transform 0.05s ease; }
             .mobileOnly { display:none }
+            .fullscreenButton { border:none; position:fixed; inset:0; top:2rem; left:2rem; width:4rem; height:4rem; 
+                opacity:0.5; background-color:rgb(80,80,80); padding:0.75rem; border-radius:0.5rem; }
+            .fullscreenButton:active { opacity:0.75; padding:0.85rem; transition:opacity 0.05s ease, padding 0.05s ease }
+            .fullscreenOnly { display:none }
+            .smallscreenOnly { display:flex }
+            @media (display-mode: fullscreen) {
+                .fullscreenOnly { display:flex }
+                .smallscreenOnly { display:none }
+            }
         </style>
         <script type="importmap">
             {
@@ -54,13 +63,20 @@
                     <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')"><h1>UP</h1></div>
                 </div>
             </div>
+            <button class="mobileOnly smallscreenOnly fullscreenButton" onclick="fullscreen(event)"><img style="display:flex; flex:1" src="./fullscreen.png"></button>
+            <button class="mobileOnly fullscreenOnly fullscreenButton" onclick="smallscreen(event)"><img src="./smallscreen.png"></button>
         </div>
         <script type="module" src="game.js"></script>
     </body>
     <script>
-        const mobileOnlyRule = [...document.styleSheets[0].cssRules].find(r => r.selectorText == ".mobileOnly");
+        const rules = [...document.styleSheets[0].cssRules];
+        const mobileOnlyRule = rules.find(r => r.selectorText == ".mobileOnly");
         if(window.innerWidth <= 1024) //assume mobile, start mobileOnly class as visible by default
             mobileOnlyRule.style.display = "flex";
+
+        const container = document.getElementById("container");
+        const fullscreenOnlyRule = rules.find(r => r.selectorText == ".fullscreenOnly");
+        const smallscreenOnlyRule = rules.find(r => r.selectorText == ".smallscreenOnly");
 
         window.addEventListener("keydown", (event) => { mobileOnlyRule.style.display = "none"; });
         window.addEventListener("touchstart", (event) => { mobileOnlyRule.style.display = "flex"; });
@@ -79,5 +95,8 @@
             event.currentTarget.classList.remove("pressed");
             window.dispatchEvent(new KeyboardEvent("simkeyup", { key: key } ));
         }
+
+        function fullscreen(event) { container.requestFullscreen(); }
+        function smallscreen(event) { document.exitFullscreen(); }
     </script>
 </html>
