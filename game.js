@@ -83,6 +83,10 @@ function loadGame()
     document.addEventListener("click", (event) => {
         canvas.requestPointerLock();
     })
+    //fullscreen when page is tapped
+    document.addEventListener("touchstart", (event) => {
+        document.getElementById("container").requestFullscreen();
+    })
 
     //tick
     let lastTime = null;
