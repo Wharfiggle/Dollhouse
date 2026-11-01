@@ -6,9 +6,9 @@
         <title>Dollhouse</title>
         <style>
             :root { 
-                --buttonSize: 7rem; 
-                --buttonSizeAndMargin: calc(var(--buttonSize) + 1rem);
-                --boxSize: min(65dvw, calc(100dvh - var(--buttonSizeAndMargin)));
+                --buttonMargin: 0.5rem;
+                --buttonSize: min(5rem, calc(33dvw - 6 * var(--buttonMargin))); 
+                --boxSize: min(65dvw, calc(100dvh - var(--buttonSize) - var(--buttonMargin)));
             }
             * { box-sizing: border-box; }
             
@@ -23,16 +23,16 @@
             
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
             .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
-                width:var(--buttonSize); height:var(--buttonSize); margin-bottom:1rem; margin-left:1rem; margin-right:1rem; transition:transform 0.05s ease-out;
-                background-color:rgb(80,80,80); border-style:solid; border-radius:20%; border-width:0.35rem; border-color:rgb(20,20,20); opacity:0.5; }
+                width:var(--buttonSize); height:var(--buttonSize); margin-bottom:var(--buttonMargin); margin-left:var(--buttonMargin); margin-right:var(--buttonMargin); transition:transform 0.05s ease-out;
+                background-color:rgb(80,80,80); border-style:solid; border-radius:20%; border-width:0.25rem; border-color:rgb(20,20,20); opacity:0.5; }
             h1 { font-size:30cqw; font-family:monospace; color:rgb(200,200,200); }
             .touchButton.pressed { opacity:0.75; transform:scale(0.9); transition:opacity 0.05s ease, transform 0.05s ease; }
             .mobileOnly { display:none }
             
-            .fullscreenButton { border:none; position:fixed; inset:0; top:1.5rem; left:1.5rem; width:3rem; height:3rem; 
-                opacity:0.5; background-color:rgb(80,80,80); padding:0.6rem; border-radius:0.3rem; }
-            .fullscreenButton:active { opacity:0.75; padding:0.45rem; transition:opacity 0.05s ease, padding 0.05s ease }
-            .fullscreenButton.fullscreenOnly:active { padding:0.85rem }
+            .fullscreenButton { border:none; position:fixed; inset:0; top:1rem; left:1rem; width:2.5rem; height:2.5rem; 
+                opacity:0.5; background-color:rgb(80,80,80); padding:0.5rem; border-radius:0.3rem; }
+            .fullscreenButton:active { opacity:0.75; padding:0.35rem; transition:opacity 0.05s ease, padding 0.05s ease }
+            .fullscreenButton.fullscreenOnly:active { padding:0.75rem }
             .fullscreenOnly { display:none }
             .smallscreenOnly { display:flex }
             @media (display-mode: fullscreen) {
