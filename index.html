@@ -6,28 +6,33 @@
         <title>Dollhouse</title>
         <style>
             :root { 
-                --buttonSize: max(8dvw, 18dvh); 
-                --buttonSizeAndMargin: calc(var(--buttonSize) + 2dvh);
-                --boxSize: min(65dvw, calc(98dvh - var(--buttonSizeAndMargin)));
+                --buttonSize: 7rem; 
+                --buttonSizeAndMargin: calc(var(--buttonSize) + 1rem);
+                --boxSize: min(65dvw, calc(100dvh - var(--buttonSizeAndMargin)));
             }
             * { box-sizing: border-box; }
+            
             body { margin: 0; }
             #container { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; overflow:hidden }
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
+            
             #overlay { pointer-events:none; display:flex; flex:1; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
-            #menuHolder { display:none; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; padding-top:1dvh; padding-bottom:1dvh; }
+            #menuHolder { display:none; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; }
             #menuBox { display:flex; width:var(--boxSize); height:var(--boxSize); background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; }
             #menuMan { background-color:green; flex:1; }
+            
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
             .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
-                width:var(--buttonSize); height:var(--buttonSize); margin:1dvh; transition:transform 0.05s ease-out;
+                width:var(--buttonSize); height:var(--buttonSize); margin-bottom:1rem; margin-left:1rem; margin-right:1rem; transition:transform 0.05s ease-out;
                 background-color:rgb(80,80,80); border-style:solid; border-radius:20%; border-width:0.35rem; border-color:rgb(20,20,20); opacity:0.5; }
             h1 { font-size:30cqw; font-family:monospace; color:rgb(200,200,200); }
             .touchButton.pressed { opacity:0.75; transform:scale(0.9); transition:opacity 0.05s ease, transform 0.05s ease; }
             .mobileOnly { display:none }
-            .fullscreenButton { border:none; position:fixed; inset:0; top:2rem; left:2rem; width:4rem; height:4rem; 
-                opacity:0.5; background-color:rgb(80,80,80); padding:0.75rem; border-radius:0.5rem; }
-            .fullscreenButton:active { opacity:0.75; padding:0.85rem; transition:opacity 0.05s ease, padding 0.05s ease }
+            
+            .fullscreenButton { border:none; position:fixed; inset:0; top:1.5rem; left:1.5rem; width:3rem; height:3rem; 
+                opacity:0.5; background-color:rgb(80,80,80); padding:0.6rem; border-radius:0.3rem; }
+            .fullscreenButton:active { opacity:0.75; padding:0.45rem; transition:opacity 0.05s ease, padding 0.05s ease }
+            .fullscreenButton.fullscreenOnly:active { padding:0.85rem }
             .fullscreenOnly { display:none }
             .smallscreenOnly { display:flex }
             @media (display-mode: fullscreen) {
@@ -49,7 +54,7 @@
         <div id="container">
             <canvas id="three" touch-action="none"></canvas>
             <canvas id="ghostui" touch-action="none"></canvas>
-            <canvas id="ui" touch-action="none"></canvas>
+            <canvas id="ui" touch-action="none" oncontextmenu="return false;"></canvas>
 
             <div id="overlay">
                 <div id="menuHolder">
@@ -63,8 +68,12 @@
                     <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')"><h1>UP</h1></div>
                 </div>
             </div>
-            <div class="mobileOnly smallscreenOnly fullscreenButton" onclick="fullscreen(event)"><img style="display:flex; flex:1" src="./fullscreen.png"></div>
-            <div class="mobileOnly fullscreenOnly fullscreenButton" onclick="smallscreen(event)"><img src="./smallscreen.png"></div>
+            <div class="mobileOnly smallscreenOnly fullscreenButton" oncontextmenu="return false;" onclick="fullscreen(event)">
+                <img src="./fullscreen.png" draggable="false" oncontextmenu="return false;">
+            </div>
+            <div class="mobileOnly fullscreenOnly fullscreenButton" oncontextmenu="return false;" onclick="smallscreen(event)">
+                <img src="./smallscreen.png" draggable="false" oncontextmenu="return false;">
+            </div>
         </div>
         <script type="module" src="game.js"></script>
     </body>
@@ -96,7 +105,15 @@
             window.dispatchEvent(new KeyboardEvent("simkeyup", { key: key } ));
         }
 
-        function fullscreen(event) { container.requestFullscreen(); }
-        function smallscreen(event) { document.exitFullscreen(); }
+        function fullscreen(event)
+        {
+            event.preventDefault();
+            container.requestFullscreen();
+        }
+        function smallscreen(event)
+        {
+            event.preventDefault();
+            document.exitFullscreen();
+        }
     </script>
 </html>
