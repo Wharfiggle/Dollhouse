@@ -111,7 +111,7 @@ function worldToScreen(vector3, camera, screenWidth, screenHeight)
 
 export class handler
 {
-    preloadMeshes = [ "./StumpyMannequin.glb" ];
+    preloadMeshes = [ "./assets/PegMan.glb" ];
     modelLoader = new GLTFLoader();
     meshes = {};
     gltfData = {};
@@ -1081,7 +1081,7 @@ export class player extends collisionGameObject
         this.cameraRoot.position.set(0, -3, 3);
         this.cameraRoot.rotateX(-Math.PI / 4);
 
-        this.handler.requestMesh("./PegMan.glb", (scene, animations) => {
+        this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.playerMesh = scene;
             this.playerMesh.traverse((obj) => {
                 if(obj.isMesh)
@@ -1424,7 +1424,7 @@ export class placedDoll extends collisionGameObject
     }
     setPose()
     {
-        this.handler.requestMesh("./PegMan.glb", (scene, animations) => {
+        this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.dollMesh = scene;
             this.dollMesh.traverse((obj) => {
                 if(obj.isMesh)
