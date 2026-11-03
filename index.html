@@ -8,7 +8,7 @@
             :root { 
                 --buttonMargin: 0.5rem;
                 --buttonSize: min(5rem, calc(33dvw - 6 * var(--buttonMargin))); 
-                --boxSize: min(65dvw, calc(100dvh - var(--buttonSize) - var(--buttonMargin)));
+                --boxSize: min(800px, 65dvw, calc(100dvh - var(--buttonSize) - var(--buttonMargin)));
             }
             * { box-sizing: border-box; }
             
@@ -17,10 +17,11 @@
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
             
             #overlay { pointer-events:none; display:flex; flex:1; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
-            #menuHolder { display:none; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; }
-            #menuBox { container-type:size; overflow:hidden; pointer-events:auto; display:flex; width:var(--boxSize); height:var(--boxSize); gap:2dvh;
-                background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; }
-            
+            #menuHolder { display:flex; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; }
+            #menuBox { container-type:size; overflow:hidden; pointer-events:auto; display:flex; width:calc(var(--boxSize) * 4 / 3); height:var(--boxSize); gap:2dvh;
+                background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; transform:scale(100%); transition:transform 0.2s ease-out }
+            #menuBox.hidden { transform:scale(0%); }
+
             #pivotSelect { position:relative; }
             #dollImg { height:100%; }
             #pivotSelect input { appearance:none; margin:0; position:absolute; cursor:pointer; width:11.5cqh; height:11.5cqh; 
@@ -36,22 +37,27 @@
             #rightLeg { right:21.5%; bottom:39.5%; }
             #torso { left:37.75%; top:28%; }
             
-            #rightHolder { display:flex; flex:1; justify-content:center; align-items:space-between; flex-direction:column; }
-            #colorPickerHolder { display:flex; flex:1; justify-content:center; align-items:center; }
-            #colorPicker { margin-top:0; border:solid 0.75rem blue; border-radius:25%; width:20cqh; height:20cqh; }
-            #arrowHolder { position:relative; width:50cqh; height:50cqh; }
-            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:15cqh; height:15cqh; 
+            #rightHolder { container-type:size; display:flex; flex:1; justify-content:center; flex-direction:column; }
+            #arrowHolder { container-type:size; position:relative; width:100cqw; height:100cqw; }
+
+            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:28cqh; height:28cqh; 
                 --scale:1; --scalex:1; transform:translate(-50%, -50%) rotate(var(--rotation)) scale(calc(var(--scale) * var(--scalex)), var(--scale)); transition:transform 0.1s ease}
-            .arrowButton.side { width:12cqh; height:12cqh }
+            .arrowButton.side { width:24cqh; height:24cqh }
             .arrowButton:active { --scale:0.9 }
-            #up { --rotation:0; top:17%; }
-            #down { --rotation:180deg; top:83%; }
-            #left { --rotation:270deg; left:17%; }
-            #right { --rotation:90deg; left:83%; }
+            #up { --rotation:0; top:13%; }
+            #down { --rotation:180deg; top:87%; }
+            #left { --rotation:270deg; left:13%; }
+            #right { --rotation:90deg; left:87%; }
             #cw1 { --rotation:0; left:20%; top:20%; }
             #cw2 { --rotation:180deg; left:80%; top:80%; }
             #ccw1 { --scalex:-100%; --rotation:0; left:80%; top:20%; }
             #ccw2 { --scalex:-100%; --rotation:180deg; left:20%; top:80%; }
+
+            #colorPicker { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:30cqh; height:30cqh;
+                appearance:none; -webkit-appearance:none; padding:0; border:solid 4cqh black; border-radius:100%; background:none; cursor:pointer; }
+            #colorPicker::-webkit-color-swatch-wrapper { padding:0; }
+            #colorPicker::-webkit-color-swatch { border:none; }
+            #colorPicker::-moz-color-swatch { border:none; }
 
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
             .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
@@ -90,7 +96,7 @@
 
             <div id="overlay">
                 <div id="menuHolder">
-                    <div id="menuBox">
+                    <div class="hidden" id="menuBox">
                         <div id="pivotSelect">
                             <img id="dollImg" src="./assets/DollHousePegManUI.png" draggable="false" oncontextmenu="return false;">
                             <input type="radio" name="pivot" id="head" value="head" oncontextmenu="return false;" checked="true">
@@ -101,10 +107,8 @@
                             <input type="radio" name="pivot" id="torso" value="torso" oncontextmenu="return false;">
                         </div>
                         <div id="rightHolder">
-                            <div id="colorPickerHolder">
-                                <input id="colorPicker" type="color">
-                            </div>
                             <div id="arrowHolder">
+                                <input id="colorPicker" type="color" value="#ff00ff">
                                 <img class="arrowButton" id="up" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
                                 <img class="arrowButton" id="down" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
                                 <img class="arrowButton" id="right" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">

@@ -1068,6 +1068,7 @@ export class player extends collisionGameObject
     placedDoll = null;
     insidePlacedDoll = false;
     openMenu = false;
+    cameraMenuOffset = 0;
     pivots = {};
     constructor(args)
     {
@@ -1225,14 +1226,14 @@ export class player extends collisionGameObject
             });
             this.handler.input.subscribeToButton(this, "q", KEY_PRESSED, () => {
                 this.openMenu = !this.openMenu;
-                const menuHolder = document.getElementById("menuHolder");
+                const menuBox = document.getElementById("menuBox");
                 if(this.openMenu)
                 {
                     document.exitPointerLock();
-                    menuHolder.style.display = "flex";
+                    menuBox.classList.remove("hidden");
                 }
                 else
-                    menuHolder.style.display = "none";
+                    menuBox.classList.add("hidden");
             });
                 
             this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
@@ -1333,7 +1334,9 @@ export class player extends collisionGameObject
             this.placeProgress = Math.max(0, this.placeProgress - dt);
 
         //camera pole arm, dont let camera go below floor
-        const menuOffset = this.openMenu ? -this.handler.camera.aspect * 2 : 0;
+        const transition = this.openMenu ? 1 : -1;
+        this.cameraMenuOffset = Math.max(0, Math.min(1, this.cameraMenuOffset + transition * dt * 10));
+        const menuOffset = -this.handler.camera.aspect * Math.sqrt(this.cameraMenuOffset) * 2;
         this.handler.camera.position.set(menuOffset, 0, 0);
         const cameraWorldPos = new THREE.Vector3();
         this.cameraRoot.getWorldPosition(cameraWorldPos);
