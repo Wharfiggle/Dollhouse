@@ -8,7 +8,7 @@
             :root { 
                 --buttonMargin: 0.5rem;
                 --buttonSize: min(5rem, calc(33dvw - 6 * var(--buttonMargin))); 
-                --boxSize: min(800px, 65dvw, calc(100dvh - var(--buttonSize) - var(--buttonMargin)));
+                --boxSize: min(800px, 62dvw, calc(98dvh - var(--buttonSize) - var(--buttonMargin)));
             }
             * { box-sizing: border-box; }
             
@@ -17,44 +17,46 @@
             #three, #ui, #ghostui { position:fixed; inset:0; width:100%; height:100% }
             
             #overlay { pointer-events:none; display:flex; flex:1; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
-            #menuHolder { display:flex; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; }
-            #menuBox { container-type:size; overflow:hidden; pointer-events:auto; display:flex; width:calc(var(--boxSize) * 4 / 3); height:var(--boxSize); gap:2dvh;
+            #menuHolder { display:flex; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; padding-top:1dvh; padding-bottom:1dvh; padding-left:1dvw; padding-right:1dvw }
+            #menuBox { container-type:size; overflow:hidden; pointer-events:auto; display:flex; width:calc(var(--boxSize) * 4 / 3); height:var(--boxSize);
                 background-color:rgba(100,100,100,0.9); border-radius:5%; padding:2dvh; transform:scale(100%); transition:transform 0.2s ease-out }
             #menuBox.hidden { transform:scale(0%); }
 
             #pivotSelect { position:relative; }
             #dollImg { height:100%; }
-            #pivotSelect input { appearance:none; margin:0; position:absolute; cursor:pointer; width:11.5cqh; height:11.5cqh; 
+            #pivotSelect input { appearance:none; margin:0; position:absolute; cursor:pointer; width:15cqh; height:15cqh; 
                 border-radius:100%; background-color:white; border:solid 1.5cqh black; -webkit-tap-highlight-color:transparent;
-                background-repeat:no-repeat; background-position:center; background-image:radial-gradient(black 40%, white 45%);
-                background-size:0% 0%; transition:background-size 0.35s cubic-bezier(0.05, 0.9, 0.2, 1); }
-            #pivotSelect input:active { transform:scale(90%, 90%); transition:transform 0.5s ease }
+                background-repeat:no-repeat; background-position:center; background-image:radial-gradient(black 25%, white 30%);
+                background-size:0% 0%; transform:translate(-50%, -50%); transition:transform 0.5s ease, background-size 0.35s cubic-bezier(0.05, 0.9, 0.2, 1); }
+            #pivotSelect input:active { transform:translate(-50%, -50%) scale(90%, 90%); transition:transform 0.5s ease }
             #pivotSelect input:checked { background-size:100% 100%; }
-            #head { left:37.75%; top:5.5%; }
-            #leftArm { left:1%; top:14.5% }
-            #rightArm { right:1%; top:14.5%; }
-            #leftLeg { left:21.5%; bottom:39.5%; }
-            #rightLeg { right:21.5%; bottom:39.5%; }
-            #torso { left:37.75%; top:28%; }
+            #head { left:50%; top:11.25%; }
+            #leftArm { left:13.5%; top:20.5% }
+            #rightArm { left:86.5%; top:20.5%; }
+            #leftLeg { left:34%; top:54.75%; }
+            #rightLeg { left:66%; top:54.75%; }
+            #torso { left:50%; top:33%; }
             
-            #rightHolder { container-type:size; display:flex; flex:1; justify-content:center; flex-direction:column; }
-            #arrowHolder { container-type:size; position:relative; width:100cqw; height:100cqw; }
+            #rightHolder { container-type:size; position:relative; display:flex; flex:1; justify-content:center; align-items:center; flex-direction:column; }
+            #arrowGradient { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:95cqw; height:95cqw; background-color:rgba(50,50,50,0.8); border-radius:100% }
+            #arrowHolder { container-type:size; position:relative; width:73cqw; height:73cqw; }
 
-            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:28cqh; height:28cqh; 
+            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:34cqh; height:34cqh; -webkit-tap-highlight-color:transparent;
                 --scale:1; --scalex:1; transform:translate(-50%, -50%) rotate(var(--rotation)) scale(calc(var(--scale) * var(--scalex)), var(--scale)); transition:transform 0.1s ease}
-            .arrowButton.side { width:24cqh; height:24cqh }
             .arrowButton:active { --scale:0.9 }
-            #up { --rotation:0; top:13%; }
-            #down { --rotation:180deg; top:87%; }
-            #left { --rotation:270deg; left:13%; }
-            #right { --rotation:90deg; left:87%; }
-            #cw1 { --rotation:0; left:20%; top:20%; }
-            #cw2 { --rotation:180deg; left:80%; top:80%; }
-            #ccw1 { --scalex:-100%; --rotation:0; left:80%; top:20%; }
-            #ccw2 { --scalex:-100%; --rotation:180deg; left:20%; top:80%; }
+            #up { --rotation:0; top:5%; }
+            #down { --rotation:180deg; top:95%; }
+            #left { --rotation:270deg; left:5%; }
+            #right { --rotation:90deg; left:95%; }
+            #cw1 { --rotation:0; left:15%; top:15%; }
+            #cw2 { --rotation:180deg; left:85%; top:85%; }
+            #ccw1 { --scalex:-100%; --rotation:0; left:85%; top:15%; }
+            #ccw2 { --scalex:-100%; --rotation:180deg; left:15%; top:85%; }
 
-            #colorPicker { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:30cqh; height:30cqh;
-                appearance:none; -webkit-appearance:none; padding:0; border:solid 4cqh black; border-radius:100%; background:none; cursor:pointer; }
+            #colorPicker { position:absolute; top:50%; left:50%; width:45cqh; height:45cqh; cursor:pointer;
+                appearance:none; -webkit-appearance:none; -webkit-tap-highlight-color:transparent; padding:0; border:solid 4cqh white; border-radius:100%; background:none; 
+                transform:translate(-50%, -50%) scale(100%); transition:transform 0.5s ease; }
+            #colorPicker:active { transform:translate(-50%, -50%) scale(90%); }
             #colorPicker::-webkit-color-swatch-wrapper { padding:0; }
             #colorPicker::-webkit-color-swatch { border:none; }
             #colorPicker::-moz-color-swatch { border:none; }
@@ -107,6 +109,7 @@
                             <input type="radio" name="pivot" id="torso" value="torso" oncontextmenu="return false;">
                         </div>
                         <div id="rightHolder">
+                            <div id="arrowGradient"></div>
                             <div id="arrowHolder">
                                 <input id="colorPicker" type="color" value="#ff00ff">
                                 <img class="arrowButton" id="up" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
