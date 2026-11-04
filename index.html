@@ -48,10 +48,10 @@
             #down { --rotation:180deg; top:93%; }
             #left { --rotation:270deg; left:7%; }
             #right { --rotation:90deg; left:93%; }
-            #cw1 { --rotation:0; left:17%; top:17%; }
-            #cw2 { --rotation:180deg; left:83%; top:83%; }
-            #ccw1 { --scalex:-100%; --rotation:0; left:83%; top:17%; }
-            #ccw2 { --scalex:-100%; --rotation:180deg; left:17%; top:83%; }
+            #cw_1 { --rotation:0; left:17%; top:17%; }
+            #cw_2 { --rotation:180deg; left:83%; top:83%; }
+            #ccw_1 { --scalex:-100%; --rotation:0; left:83%; top:17%; }
+            #ccw_2 { --scalex:-100%; --rotation:180deg; left:17%; top:83%; }
 
             #colorPicker { position:absolute; top:50%; left:50%; width:40cqh; height:40cqh; cursor:pointer;
                 appearance:none; -webkit-appearance:none; -webkit-tap-highlight-color:transparent; padding:0; border:solid 3cqh black; border-radius:100%; background:none; 
@@ -112,22 +112,22 @@
                             <div id="arrowBackground"></div>
                             <div id="arrowHolder">
                                 <input id="colorPicker" type="color" value="#ff00ff">
-                                <img class="arrowButton" id="up" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="down" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="right" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="left" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="cw1" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="cw2" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="ccw1" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="ccw2" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="up" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="down" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="right" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="left" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="cw_1" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="cw_2" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="ccw_1" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="ccw_2" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="mobileOnly" id="touchButtonHolder">
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'e')" ontouchend="stopTouch(event, 'e')" ontouchcancel="stopTouch(event, 'e')"><h1>PLACE</h1></div>
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, 'q')" ontouchend="stopTouch(event, 'q')" ontouchcancel="stopTouch(event, 'q')"><h1>POSE</h1></div>
-                    <div class="mobileOnly touchButton" ontouchstart="startTouch(event, ' ')" ontouchend="stopTouch(event, ' ')" ontouchcancel="stopTouch(event, ' ')"><h1>UP</h1></div>
+                    <div id="e" class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>PLACE</h1></div>
+                    <div id="q" class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>POSE</h1></div>
+                    <div id=" " class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>UP</h1></div>
                 </div>
             </div>
             <div class="mobileOnly smallscreenOnly fullscreenButton" oncontextmenu="return false;" onclick="fullscreen(event)">
@@ -152,19 +152,19 @@
         window.addEventListener("keydown", (event) => { mobileOnlyRule.style.display = "none"; });
         window.addEventListener("touchstart", (event) => { mobileOnlyRule.style.display = "flex"; });
 
-        function startTouch(event, key)
+        function simKey(event)
         {
             event.preventDefault();
             event.stopPropagation();
             event.currentTarget.classList.add("pressed");
-            window.dispatchEvent(new KeyboardEvent("simkeydown", { key: key } ));
+            window.dispatchEvent(new KeyboardEvent("simkeydown", { key: event.currentTarget.id } ));
         }
-        function stopTouch(event, key)
+        function stopSimKey(event)
         {
             event.preventDefault();
             event.stopPropagation();
             event.currentTarget.classList.remove("pressed");
-            window.dispatchEvent(new KeyboardEvent("simkeyup", { key: key } ));
+            window.dispatchEvent(new KeyboardEvent("simkeyup", { key: event.currentTarget.id } ));
         }
 
         function fullscreen(event)
@@ -176,6 +176,21 @@
         {
             event.preventDefault();
             document.exitFullscreen();
+        }
+
+        function pivotTurn(event)
+        {
+            const pivot = document.querySelector('input[name="pivot"]:checked').id;
+            var turnDir = event.currentTarget.id;
+            const endInd = turnDir.indexOf('_');
+            if(endInd != -1)
+                turnDir = turnDir.substring(0, endInd);
+            document.dispatchEvent(new CustomEvent("pivotTurn", { 
+                detail: { 
+                    pivot: pivot, 
+                    turnDir: turnDir 
+                }
+            }));
         }
     </script>
 </html>
