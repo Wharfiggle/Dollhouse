@@ -1103,12 +1103,7 @@ export class player extends collisionGameObject
             this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
             this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
             this.pivots.head = skinnedMesh.skeleton.getBoneByName("Head_Bone_02");
-            this.pivots.spine = skinnedMesh.skeleton.getBoneByName("Spine_Bone_01");
-
-            this.pivots.spine.rotation.y = Math.PI / 2;
-            this.pivots.rightArm.rotation.x = -Math.PI / 2;
-            this.pivots.leftArm.rotation.x = Math.PI / 2;
-            this.pivots.head.rotation.y = -Math.PI / 4;
+            this.pivots.torso = skinnedMesh.skeleton.getBoneByName("Spine_Bone_01");
         });
 
         this.id = args.id ?? 0;
@@ -1175,6 +1170,14 @@ export class player extends collisionGameObject
 
             this.setCollider(0.3, 2, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
+
+            document.addEventListener("pivotTurn", (event) => {
+                console.log(event);
+                const d = event.detail;
+                const axis = (d.turnDir == "right" || d.turnDir == "left") ? "x" : ( (d.turnDir == "up" || d.turnDir == "down") ? "y" : "z" );
+                const mod = (d.turnDir == "right" || d.turnDir == "down" || d.turnDir == "cw") ? 1 : -1;
+                this.pivots[event.detail.pivot].rotation[axis] += mod * Math.PI / 4;
+            });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
                 if(e.coord.x < 0)
