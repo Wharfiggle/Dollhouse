@@ -1174,9 +1174,15 @@ export class player extends collisionGameObject
             document.addEventListener("pivotTurn", (event) => {
                 console.log(event);
                 const d = event.detail;
-                const axis = (d.turnDir == "right" || d.turnDir == "left") ? "x" : ( (d.turnDir == "up" || d.turnDir == "down") ? "y" : "z" );
                 const mod = (d.turnDir == "right" || d.turnDir == "down" || d.turnDir == "cw") ? 1 : -1;
-                this.pivots[event.detail.pivot].rotation[axis] += mod * Math.PI / 4;
+                const axis = new THREE.Vector3();
+                if(d.turnDir == "right" || d.turnDir == "left")
+                    axis.x = 1;
+                else if(d.turnDir == "up" || d.turnDir == "down")
+                    axis.y = 1;
+                else
+                    axis.z = 1;
+                this.pivots[event.detail.pivot].rotateOnWorldAxis(axis, mod * Math.PI / 4);
             });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
