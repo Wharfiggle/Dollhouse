@@ -27,8 +27,8 @@
             #pivotSelect input { appearance:none; margin:0; position:absolute; cursor:pointer; width:15cqh; height:15cqh; 
                 border-radius:100%; background-color:white; border:solid 1.5cqh black; -webkit-tap-highlight-color:transparent;
                 background-repeat:no-repeat; background-position:center; background-image:radial-gradient(black 25%, white 27%);
-                background-size:0% 0%; transform:translate(-50%, -50%); transition:transform 0.5s ease, background-size 0.35s cubic-bezier(0.05, 0.9, 0.2, 1); }
-            #pivotSelect input:active { transform:translate(-50%, -50%) scale(90%, 90%); transition:transform 0.5s ease }
+                background-size:0% 0%; transform:translate(-50%, -50%); transition:transform 0.5s ease, margin-top 0.5s ease, background-size 0.35s cubic-bezier(0.05, 0.9, 0.2, 1); }
+            #pivotSelect input:active { transform:translate(-50%, -83.33%) scale(90%, 90%); margin-top:5cqh; }
             #pivotSelect input:checked { background-size:100% 100%; }
             #head { left:50%; top:11.25%; }
             #leftArm { left:13.5%; top:20.5% }
@@ -41,9 +41,9 @@
             #arrowBackground { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:95cqw; height:95cqw; background-color:rgba(0,0,0,0.5); border:solid 2cqw black; border-radius:100% }
             #arrowHolder { container-type:size; position:relative; width:73cqw; height:73cqw; }
 
-            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:34cqh; height:34cqh; -webkit-tap-highlight-color:transparent;
-                --scale:1; --scalex:1; transform:translate(-50%, -50%) rotate(var(--rotation)) scale(calc(var(--scale) * var(--scalex)), var(--scale)); transition:transform 0.05s ease}
-            .arrowButton:active { --scale:0.8 }
+            .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:40cqh; height:40cqh; padding:3cqh; -webkit-tap-highlight-color:transparent;
+                --scale:1; --scalex:1; transform:translate(-50%, -50%) rotate(var(--rotation)) scale(calc(var(--scale) * var(--scalex)), var(--scale)); transition:padding 0.05s ease }
+            .arrowButton:active { padding:6cqh; opacity:0.5; }
             #up { --rotation:0; top:7%; }
             #down { --rotation:180deg; top:93%; }
             #left { --rotation:270deg; left:7%; }
@@ -53,13 +53,16 @@
             #ccw_1 { --scalex:-100%; --rotation:0; left:83%; top:17%; }
             #ccw_2 { --scalex:-100%; --rotation:180deg; left:17%; top:83%; }
 
-            #colorPicker { position:absolute; top:50%; left:50%; width:40cqh; height:40cqh; cursor:pointer;
-                appearance:none; -webkit-appearance:none; -webkit-tap-highlight-color:transparent; padding:0; border:solid 3cqh black; border-radius:100%; background:none; 
-                transform:translate(-50%, -50%) scale(100%); transition:transform 0.5s ease; }
-            #colorPicker:active { transform:translate(-50%, -50%) scale(90%); }
+            #colorPicker { position:absolute; top:50%; left:50%; width:42cqh; height:42cqh; cursor:pointer;
+                appearance:none; -webkit-appearance:none; -webkit-tap-highlight-color:transparent; padding:0; border:solid 3cqh black; border-radius:100%; background-color:white; 
+                transform:translate(-50%, -50%) scale(100%); transition:padding 0.5s ease, transform 0.5s ease; }
+            #colorPicker:active { transform:translate(-50%, -50%) scale(90%); padding:2cqh; }
             #colorPicker::-webkit-color-swatch-wrapper { padding:0; }
-            #colorPicker::-webkit-color-swatch { border:solid 3cqh white; border-radius:100%; }
-            #colorPicker::-moz-color-swatch { border:solid 3cqh white; border-radius:100%; }
+            #colorPicker::-webkit-color-swatch { margin:2cqh; border:none; border-radius:100% }
+            #colorPicker::-moz-color-swatch { margin:2cqh; border:none; border-radius:100% }
+
+            #reset { position:absolute; left:50%; bottom:5%; width:20cqh; height:20cqh; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:transform 0.5s ease, opacity 1.5s ease, margin-bottom 1.5s ease; }
+            #reset:active { transform:scale(0.8); opacity:0.5; margin-bottom:2cqh; }
 
             #touchButtonHolder { display:flex; width:auto; align-items:end; justify-content:space-between; }
             .touchButton { container-type:inline-size; touch-action:none; pointer-events:auto; user-select:none; align-items:center; justify-content:center;
@@ -107,19 +110,20 @@
                             <input type="radio" name="pivot" id="leftLeg" value="leftLeg" oncontextmenu="return false;">
                             <input type="radio" name="pivot" id="rightLeg" value="rightLeg" oncontextmenu="return false;">
                             <input type="radio" name="pivot" id="body" value="body" oncontextmenu="return false;">
+                            <img id="reset" src="./assets/reset.png" onclick="pivotReset(event)" draggable="false" oncontextmenu="return false;">
                         </div>
                         <div id="rightHolder">
                             <div id="arrowBackground"></div>
                             <div id="arrowHolder">
                                 <input id="colorPicker" type="color" value="#ff00ff">
-                                <img class="arrowButton" id="up" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="down" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="right" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton" id="left" src="./assets/arrowaway.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="cw_1" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="cw_2" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="ccw_1" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
-                                <img class="arrowButton side" id="ccw_2" src="./assets/arrowside.png" onclick="pivotTurn(event)" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="up" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="down" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="right" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton" id="left" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="cw_1" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="cw_2" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="ccw_1" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
+                                <img class="arrowButton side" id="ccw_2" src="./assets/arrowside.png" draggable="false" oncontextmenu="return false;">
                             </div>
                         </div>
                     </div>
@@ -145,12 +149,25 @@
         if(window.innerWidth <= 1024) //assume mobile, start mobileOnly class as visible by default
             mobileOnlyRule.style.display = "flex";
 
+        window.addEventListener("keydown", (event) => { mobileOnlyRule.style.display = "none"; });
+        window.addEventListener("touchstart", (event) => { mobileOnlyRule.style.display = "flex"; });
+
+
         const container = document.getElementById("container");
         const fullscreenOnlyRule = rules.find(r => r.selectorText == ".fullscreenOnly");
         const smallscreenOnlyRule = rules.find(r => r.selectorText == ".smallscreenOnly");
 
-        window.addEventListener("keydown", (event) => { mobileOnlyRule.style.display = "none"; });
-        window.addEventListener("touchstart", (event) => { mobileOnlyRule.style.display = "flex"; });
+        function fullscreen(event)
+        {
+            event.preventDefault();
+            container.requestFullscreen();
+        }
+        function smallscreen(event)
+        {
+            event.preventDefault();
+            document.exitFullscreen();
+        }
+
 
         function simKey(event)
         {
@@ -167,21 +184,38 @@
             window.dispatchEvent(new KeyboardEvent("simkeyup", { key: event.currentTarget.id } ));
         }
 
-        function fullscreen(event)
+
+        const turnInterval = { interval:null, id:null };
+        const arrowButtons = document.getElementsByClassName("arrowButton");
+        for(const rowBut of arrowButtons)
         {
-            event.preventDefault();
-            container.requestFullscreen();
-        }
-        function smallscreen(event)
-        {
-            event.preventDefault();
-            document.exitFullscreen();
+            rowBut.onpointerdown = (event) => { requestPivotTurn(event); };
+            rowBut.onpointerup = (event) => stopPivotTurn(event);
+            rowBut.onpointercancel = (event) => stopPivotTurn(event);
         }
 
-        function pivotTurn(event)
+        function requestPivotTurn(event)
+        {
+            if(turnInterval.id == event.currentTarget.id)
+                return;
+            stopPivotTurn();
+            pivotTurn(event.currentTarget.id);
+            turnInterval.interval = setInterval(() => { pivotTurn(turnInterval.id) }, 250);
+            turnInterval.id = event.currentTarget.id;
+        }
+        function stopPivotTurn(event)
+        {
+            if(!turnInterval.id)
+                return;
+            if(!event || event.currentTarget.id == turnInterval.id)
+            {
+                clearInterval(turnInterval.interval);
+                turnInterval.id = null;
+            }
+        }
+        function pivotTurn(turnDir)
         {
             const pivot = document.querySelector('input[name="pivot"]:checked').id;
-            var turnDir = event.currentTarget.id;
             const endInd = turnDir.indexOf('_');
             if(endInd != -1)
                 turnDir = turnDir.substring(0, endInd);
@@ -192,5 +226,7 @@
                 }
             }));
         }
+
+        function pivotReset(event) { document.dispatchEvent(new CustomEvent("pivotReset")); }
     </script>
 </html>

@@ -1116,13 +1116,20 @@ export class player extends collisionGameObject
                 if(obj.isSkinnedMesh)
                     skinnedMesh = obj;
             });
-            skinnedMesh.skeleton.bones.forEach(bone => { console.log(bone.name); });
             this.pivots.rightArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_R_03");
             this.pivots.leftArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_L_06");
             this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
             this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
             this.pivots.head = skinnedMesh.skeleton.getBoneByName("Head_Bone_02");
             this.pivots.body = skinnedMesh.skeleton.getBoneByName("Hip_Bone_00");
+
+            this.pivots.rightArm.rotation.z = Math.PI;
+            this.pivots.leftArm.rotation.z = Math.PI;
+
+            for(const [id, piv] of Object.entries(this.pivots))
+            {
+                piv.restQuat = piv.quaternion.clone();
+            }
         });
 
         this.id = args.id ?? 0;
@@ -1197,9 +1204,10 @@ export class player extends collisionGameObject
                 this.ui.canvas.requestPointerLock();
             });
 
-            //event received from index.html when pose menu arrow buttons are clicked
+            //event received from index.html when pose menu arrow buttons are pressed
             document.addEventListener("pivotTurn", (event) => {
                 const d = event.detail;
+                //determine axis and direction
                 const mod = (d.turnDir == "right" || d.turnDir == "down" || d.turnDir == "cw") ? 1 : -1;
                 const axis = new THREE.Vector3();
                 if(d.turnDir == "up" || d.turnDir == "down")
@@ -1209,14 +1217,15 @@ export class player extends collisionGameObject
                 else
                     axis.z = 1;
 
+                //apply rotation on given axis
                 const pivot = this.pivots[d.pivot];
                 //on limbs, rotate axis to cancel out body's rotations so that rotation direction is still consistent
                 if(d.pivot != "body")
                     axis.applyQuaternion(this.pivots.body.quaternion.clone().invert());
-                pivot.rotateOnWorldAxis(axis, mod * Math.PI / 4);
+                const quat = pivot.quaternion.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(axis, mod * Math.PI / 4));
 
                 //get closest direction in 26 voxel neighborhood and snap to it
-                const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(pivot.quaternion);
+                const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
                 let direction = poseDirections[0];
                 let bestDot = 0;
                 for(const dir of poseDirections)
@@ -1228,24 +1237,25 @@ export class player extends collisionGameObject
                         direction = dir;
                     }
                 }
-                pivot.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
+                quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
 
                 //snap roll to 45 degree increments
-
-                /*const up = new THREE.Vector3(0, 0, 1).applyQuaternion(pivot.quaternion);
-                const referenceUp = new THREE.Vector3(0, 0, 1);
-                //project both up vectors onto the plane perpendicular to forward
-                up.addScaledVector(direction, -up.dot(direction)).normalize();
-                referenceUp.addScaledVector(direction, -referenceUp.dot(direction)).normalize();
-                const roll = Math.atan2(
-                    direction.dot(new THREE.Vector3().crossVectors(referenceUp, up)),
-                    referenceUp.dot(up)
-                );*/
-
-                const projected = pivot.quaternion.x * direction.x + pivot.quaternion.y * direction.y + pivot.quaternion.z * direction.z;
-                const roll = 2 * Math.atan2(projected, pivot.quaternion.w);
+                const projected = quat.x * direction.x + quat.y * direction.y + quat.z * direction.z;
+                const roll = 2 * Math.atan2(projected, quat.w);
                 const snappedRoll = Math.round(roll / (Math.PI / 4)) * (Math.PI / 4);
-                pivot.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
+                quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
+
+                pivot.target = quat;
+                pivot.t = 0;
+            });
+
+            //event received from index.html when reset button is pressed
+            document.addEventListener("pivotReset", (event) => {
+                for(const [id, piv] of Object.entries(this.pivots))
+                {
+                    piv.target = piv.restQuat;
+                    piv.t = 0;
+                }
             });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
@@ -1329,6 +1339,7 @@ export class player extends collisionGameObject
         {
             this.ui.canvas.removeEventListener("click");
             document.removeEventListener("pivotTurn");
+            document.removeEventListener("pivotReset");
             this.handler.input.unsubscribeFromAllInput(this);
         }
     }
@@ -1421,6 +1432,24 @@ export class player extends collisionGameObject
         }
         else if(this.placeProgress > 0)
             this.placeProgress = Math.max(0, this.placeProgress - dt);
+        
+
+        //slerp pivots towards target rotation 
+        for(const [id, piv] of Object.entries(this.pivots))
+        {
+            if(piv.target)
+            {
+                piv.t ??= 0;
+                piv.t = Math.min(1, piv.t + dt * 2);
+                piv.quaternion.slerp(piv.target, Math.sqrt(piv.t));
+                if(piv.t >= 1)
+                {
+                    piv.target = null;
+                    piv.t = 0;
+                }
+            }
+        }
+
 
         //calculate camera offsets and rotations beased on cameraMenuTransition
         const cmt = this.cameraMenuTransition;
