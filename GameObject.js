@@ -1199,8 +1199,7 @@ export class player extends collisionGameObject
 
             //lock mouse when page is clicked, but only if menu is not open
             this.ui.canvas.addEventListener("click", (event) => {
-                if(this.openMenu)
-                    return;
+                this.setOpenMenu(false);
                 this.ui.canvas.requestPointerLock();
             });
 
@@ -1259,8 +1258,7 @@ export class player extends collisionGameObject
             });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
-                if(this.openMenu)
-                    return;
+                this.setOpenMenu(false);
                 if(e.coord.x < 0)
                 {
                     if(!this.touchMove.start)
@@ -1310,20 +1308,7 @@ export class player extends collisionGameObject
                 if(this.placeWaitForRelease)
                     this.placeWaitForRelease = false;
             });
-            this.handler.input.subscribeToButton(this, "q", KEY_PRESSED, () => {
-                this.openMenu = !this.openMenu;
-                const menuBox = document.getElementById("menuBox");
-                if(this.openMenu)
-                {
-                    const cmt = this.cameraMenuTransition;
-                    cmt.targetOrbitQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI * 0.25, 0, 0, "XYZ"));
-                    cmt.targetMeshQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.mesh.rotation.z + Math.PI * 0.85, "XYZ"));
-                    document.exitPointerLock();
-                    menuBox.classList.remove("hidden");
-                }
-                else
-                    menuBox.classList.add("hidden");
-            });
+            this.handler.input.subscribeToButton(this, "q", KEY_PRESSED, () => { this.setOpenMenu(!this.openMenu); });
                 
             this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => {
                 if(this.openMenu)
@@ -1532,6 +1517,23 @@ export class player extends collisionGameObject
         this.meshTargetYaw = yaw;
         this.meshYaw = yaw;
         this.playerMesh.rotation.z = yaw;
+    }
+    setOpenMenu(open)
+    {
+        if(this.openMenu == open)
+            return;
+        this.openMenu = open;
+        const menuBox = document.getElementById("menuBox");
+        if(this.openMenu)
+        {
+            const cmt = this.cameraMenuTransition;
+            cmt.targetOrbitQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI * 0.25, 0, 0, "XYZ"));
+            cmt.targetMeshQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.mesh.rotation.z + Math.PI * 0.85, "XYZ"));
+            document.exitPointerLock();
+            menuBox.classList.remove("hidden");
+        }
+        else
+            menuBox.classList.add("hidden");
     }
     onCollision(correction)
     {
