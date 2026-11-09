@@ -62,6 +62,20 @@ const compression = {
     }
 }
 
+const poseDirections = [];
+for(let i = -1; i <= 1; i++)
+{
+    for(let j = -1; j <= 1; j++)
+    {
+        for(let k = -1; k <= 1; k++)
+        {
+            if(i == 0 && j == 0 && k == 0)
+                continue;
+            poseDirections.push(new THREE.Vector3(i, j, k).normalize());
+        }
+    }
+}
+
 
 function clampByBytes(value, bytes, signed)
 {
@@ -1068,7 +1082,12 @@ export class player extends collisionGameObject
     placedDoll = null;
     insidePlacedDoll = false;
     openMenu = false;
-    cameraMenuOffset = 0;
+    cameraMenuTransition = {
+        offset: 1.8,
+        t: 0,
+        targetOrbitQuat: null,
+        targetMeshQuat: null
+    };
     pivots = {};
     constructor(args)
     {
@@ -1103,7 +1122,7 @@ export class player extends collisionGameObject
             this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
             this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
             this.pivots.head = skinnedMesh.skeleton.getBoneByName("Head_Bone_02");
-            this.pivots.torso = skinnedMesh.skeleton.getBoneByName("Spine_Bone_01");
+            this.pivots.body = skinnedMesh.skeleton.getBoneByName("Hip_Bone_00");
         });
 
         this.id = args.id ?? 0;
@@ -1171,21 +1190,67 @@ export class player extends collisionGameObject
             this.setCollider(0.3, 2, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
 
+            //lock mouse when page is clicked, but only if menu is not open
+            this.ui.canvas.addEventListener("click", (event) => {
+                if(this.openMenu)
+                    return;
+                this.ui.canvas.requestPointerLock();
+            });
+
+            //event received from index.html when pose menu arrow buttons are clicked
             document.addEventListener("pivotTurn", (event) => {
-                console.log(event);
                 const d = event.detail;
                 const mod = (d.turnDir == "right" || d.turnDir == "down" || d.turnDir == "cw") ? 1 : -1;
                 const axis = new THREE.Vector3();
-                if(d.turnDir == "right" || d.turnDir == "left")
-                    axis.x = 1;
-                else if(d.turnDir == "up" || d.turnDir == "down")
+                if(d.turnDir == "up" || d.turnDir == "down")
+                    axis.x = -1;
+                else if(d.turnDir == "left" || d.turnDir == "right")
                     axis.y = 1;
                 else
                     axis.z = 1;
-                this.pivots[event.detail.pivot].rotateOnWorldAxis(axis, mod * Math.PI / 4);
+
+                const pivot = this.pivots[d.pivot];
+                //on limbs, rotate axis to cancel out body's rotations so that rotation direction is still consistent
+                if(d.pivot != "body")
+                    axis.applyQuaternion(this.pivots.body.quaternion.clone().invert());
+                pivot.rotateOnWorldAxis(axis, mod * Math.PI / 4);
+
+                //get closest direction in 26 voxel neighborhood and snap to it
+                const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(pivot.quaternion);
+                let direction = poseDirections[0];
+                let bestDot = 0;
+                for(const dir of poseDirections)
+                {
+                    const dot = forward.dot(dir);
+                    if(dot > bestDot)
+                    {
+                        bestDot = dot;
+                        direction = dir;
+                    }
+                }
+                pivot.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
+
+                //snap roll to 45 degree increments
+
+                /*const up = new THREE.Vector3(0, 0, 1).applyQuaternion(pivot.quaternion);
+                const referenceUp = new THREE.Vector3(0, 0, 1);
+                //project both up vectors onto the plane perpendicular to forward
+                up.addScaledVector(direction, -up.dot(direction)).normalize();
+                referenceUp.addScaledVector(direction, -referenceUp.dot(direction)).normalize();
+                const roll = Math.atan2(
+                    direction.dot(new THREE.Vector3().crossVectors(referenceUp, up)),
+                    referenceUp.dot(up)
+                );*/
+
+                const projected = pivot.quaternion.x * direction.x + pivot.quaternion.y * direction.y + pivot.quaternion.z * direction.z;
+                const roll = 2 * Math.atan2(projected, pivot.quaternion.w);
+                const snappedRoll = Math.round(roll / (Math.PI / 4)) * (Math.PI / 4);
+                pivot.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
             });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
+                if(this.openMenu)
+                    return;
                 if(e.coord.x < 0)
                 {
                     if(!this.touchMove.start)
@@ -1212,6 +1277,8 @@ export class player extends collisionGameObject
                     this.touchLookIdentifier = null;
             })
             this.handler.input.subscribeToCursorMove(this, (e) => {
+                if(this.openMenu)
+                    return;
                 if(e.touchIdentifier != null && e.touchIdentifier == this.touchMove.identifier)
                 {
                     const delta = this.touchMove.start.clone().sub(e.pos);
@@ -1238,6 +1305,9 @@ export class player extends collisionGameObject
                 const menuBox = document.getElementById("menuBox");
                 if(this.openMenu)
                 {
+                    const cmt = this.cameraMenuTransition;
+                    cmt.targetOrbitQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI * 0.25, 0, 0, "XYZ"));
+                    cmt.targetMeshQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.mesh.rotation.z + Math.PI * 0.85, "XYZ"));
                     document.exitPointerLock();
                     menuBox.classList.remove("hidden");
                 }
@@ -1245,12 +1315,22 @@ export class player extends collisionGameObject
                     menuBox.classList.add("hidden");
             });
                 
-            this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => { this.climbing = true; })
-            this.handler.input.subscribeToButton(this, " ", KEY_RELEASED, () => { this.climbing = false; })
-            this.handler.input.subscribeToButton(this, "`", KEY_PRESSED, () => { this.handler.collision.setDebugDraw(!this.handler.collision.debugDraw); })
+            this.handler.input.subscribeToButton(this, " ", KEY_PRESSED, () => {
+                if(this.openMenu)
+                    return;
+                this.climbing = true; 
+            });
+            this.handler.input.subscribeToButton(this, " ", KEY_RELEASED, () => { this.climbing = false; });
+            
+            //TODO: remove, debug
+            this.handler.input.subscribeToButton(this, "`", KEY_PRESSED, () => { this.handler.collision.setDebugDraw(!this.handler.collision.debugDraw); });
         }
         else
+        {
+            this.ui.canvas.removeEventListener("click");
+            document.removeEventListener("pivotTurn");
             this.handler.input.unsubscribeFromAllInput(this);
+        }
     }
     tick(dt, time)
     {
@@ -1266,13 +1346,13 @@ export class player extends collisionGameObject
 
         //calculate movement direction
         const moveKey = new THREE.Vector2();
-        if(this.handler.input.isHeld('w')) moveKey.y += 1;
-        if(this.handler.input.isHeld('s')) moveKey.y -= 1;
-        if(this.handler.input.isHeld('d')) moveKey.x += 1;
-        if(this.handler.input.isHeld('a')) moveKey.x -= 1;
+        if(this.handler.input.isHeld("w")) moveKey.y += 1;
+        if(this.handler.input.isHeld("s")) moveKey.y -= 1;
+        if(this.handler.input.isHeld("d")) moveKey.x += 1;
+        if(this.handler.input.isHeld("a")) moveKey.x -= 1;
         moveKey.normalize();
         const moveIn = moveKey.add(this.moveInput.clone().divideScalar(this.touchMove.maxDist * this.ui.wScale));
-        if(moveIn.length() > 0)
+        if(!this.openMenu && moveIn.length() > 0)
         {
             const forwardVector = new THREE.Vector3(0, 1, 0); //we consider the positive y direction to be forward
             forwardVector.applyQuaternion(this.mesh.quaternion);
@@ -1323,7 +1403,7 @@ export class player extends collisionGameObject
         this.setPos(clampVec3(this.getPos(), -MAX_METERS, MAX_METERS));
 
         //hold place button for full duration then place doll
-        if(this.handler.input.isHeld("e") && this.playerMesh && !this.insidePlacedDoll && !this.placeWaitForRelease)
+        if(this.handler.input.isHeld("e") && !this.openMenu && this.playerMesh && !this.insidePlacedDoll && !this.placeWaitForRelease)
         {
             this.placeProgress += dt;
 
@@ -1342,11 +1422,22 @@ export class player extends collisionGameObject
         else if(this.placeProgress > 0)
             this.placeProgress = Math.max(0, this.placeProgress - dt);
 
-        //camera pole arm, dont let camera go below floor
+        //calculate camera offsets and rotations beased on cameraMenuTransition
+        const cmt = this.cameraMenuTransition;
         const transition = this.openMenu ? 1 : -1;
-        this.cameraMenuOffset = Math.max(0, Math.min(1, this.cameraMenuOffset + transition * dt * 10));
-        const menuOffset = -this.handler.camera.aspect * Math.sqrt(this.cameraMenuOffset) * 2;
+        const prevT = cmt.t;
+        cmt.t = Math.max(0, Math.min(1, cmt.t + transition * dt * 2));
+        const menuOffset = -this.handler.camera.aspect * cmt.t * cmt.offset;
         this.handler.camera.position.set(menuOffset, 0, 0);
+
+        if(this.openMenu && prevT < 1)
+        {
+            this.cameraOrbit.quaternion.slerp(cmt.targetOrbitQuat, Math.pow(cmt.t, 2));
+            this.playerMesh.quaternion.slerp(cmt.targetMeshQuat, Math.pow(cmt.t, 2));
+            this.setMeshYaw(this.playerMesh.rotation.z);
+        }
+
+        //camera pole arm, dont let camera go below floor
         const cameraWorldPos = new THREE.Vector3();
         this.cameraRoot.getWorldPosition(cameraWorldPos);
         const cameraGround = this.groundLevel + 0.05;
@@ -1406,6 +1497,12 @@ export class player extends collisionGameObject
         }
         else
             this.meshYaw = this.meshTargetYaw;
+    }
+    setMeshYaw(yaw)
+    {
+        this.meshTargetYaw = yaw;
+        this.meshYaw = yaw;
+        this.playerMesh.rotation.z = yaw;
     }
     onCollision(correction)
     {

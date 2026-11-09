@@ -56,7 +56,7 @@ function loadGame()
     const ambiLight = new THREE.AmbientLight(urlParams.ambientLight ? urlParams.ambientLight : "rgb(100, 100, 100)");
     scene.add(ambiLight);
     const dirLight = new THREE.DirectionalLight(urlParams.dirLight ? urlParams.dirLight : "white", 40);
-    dirLight.position.set(1, 1, 1);
+    dirLight.position.set(0.5, -0.5, 1);
     dirLight.castShadow = true;
     scene.add(dirLight);
 
@@ -78,11 +78,6 @@ function loadGame()
     
     handler.newGameObject(GameObject.ground);
 
-
-    //lock mouse when page is clicked
-    canvas.addEventListener("click", (event) => {
-        canvas.requestPointerLock();
-    })
 
     //tick
     let lastTime = null;
