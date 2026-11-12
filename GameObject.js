@@ -1031,7 +1031,7 @@ export class multiplayer
             this.room.onPeerLeave = onPeerLeave;
         
         this.stateUpdate = this.room.makeAction("stateUpdate");
-        this.stateUpdate.onMessage = (update, { peerId }) => { 
+        const onMessage = (update, { peerId }) => { 
             const player = this.getPlayer(peerId);
 
             //decompress received data
@@ -1068,7 +1068,11 @@ export class multiplayer
             {
                 player.receiveCatchUpData(id, value, full);
             }
-        }
+        };
+        if(typeof this.stateUpdate.onMessage == "function")
+            this.stateUpdate.onMessage(onMessage);
+        else
+            this.stateUpdate.onMessage = onMessage;
     }
     send(dt, time)
     {
