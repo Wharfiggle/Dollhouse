@@ -1009,29 +1009,21 @@ export class multiplayer
         this.handler = handler;
         this.room = joinRoom({ appId: "dollhouse" }, "test-room");
         
-        const onPeerJoin = (peerId) => {
+        this.room.onPeerJoin = (peerId) => {
             console.log("Player joined room: " + peerId);
             const newPlayer = this.handler.newGameObject(player, { id: peerId, isLocal: false, startPos: new THREE.Vector3(0, 0, 10)});
             this.addPlayer(newPlayer, peerId);
             this.playerJoined = true;
         };
-        if(typeof this.room.onPeerJoin == "function")
-            this.room.onPeerJoin(onPeerJoin);
-        else
-            this.room.onPeerJoin = onPeerJoin;
 
-        const onPeerLeave = (peerId) => {
+        this.room.onPeerLeave = (peerId) => {
             console.log("Player disconnected: " + peerId);
             this.handler.removeGameObject(this.getPlayer(peerId));
             this.removePlayer(peerId);
         };
-        if(typeof this.room.onPeerLeave == "function")
-            this.room.onPeerLeave(onPeerLeave);
-        else
-            this.room.onPeerLeave = onPeerLeave;
         
         this.stateUpdate = this.room.makeAction("stateUpdate");
-        const onMessage = (update, { peerId }) => { 
+        this.stateUpdate.onMessage = (update, { peerId }) => { 
             const player = this.getPlayer(peerId);
 
             //decompress received data
@@ -1069,10 +1061,6 @@ export class multiplayer
                 player.receiveCatchUpData(id, value, full);
             }
         };
-        if(typeof this.stateUpdate.onMessage == "function")
-            this.stateUpdate.onMessage(onMessage);
-        else
-            this.stateUpdate.onMessage = onMessage;
     }
     send(dt, time)
     {
