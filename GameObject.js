@@ -1018,7 +1018,7 @@ export class multiplayer
 
             //decompress received data
             const view = new DataView(update.buffer, update.byteOffset, update.byteLength);
-            const flags = new Uint8Array(update.buffer, 0, flagBytes);
+            const flags = new Uint8Array(update.buffer, update.byteOffset, flagBytes);
             let offset = flagBytes;
             const full = flags[0] & 1;
             let data = {};
@@ -1120,11 +1120,11 @@ export class player extends collisionGameObject
     pivots = {};
     pose = {
         body: { dir:poseDirectionUp, roll:0 },
-        head: { dir:poseDirectionUp, roll:0 },
-        leftArm: { dir:poseDirectionDown, roll:0 },
-        rightArm: { dir:poseDirectionDown, roll:0 },
-        leftLeg: { dir:poseDirectionDown, roll:0 },
-        rightLeg: { dir:poseDirectionDown, roll:0 }
+        head: { dir:poseDirectionUp },
+        leftArm: { dir:poseDirectionDown },
+        rightArm: { dir:poseDirectionDown },
+        leftLeg: { dir:poseDirectionDown },
+        rightLeg: { dir:poseDirectionDown }
     };
 
     constructor(args)
@@ -1196,7 +1196,7 @@ export class player extends collisionGameObject
         this.addSendingData(sendingDataIds.targetYaw, "radians",
             () => [this.meshTargetYaw],
             (toFormat) => toFormat[0],
-            (data, t) => {
+            (data) => {
                 this.meshTargetYaw = data.target;
                 return true;
             });
@@ -1205,7 +1205,7 @@ export class player extends collisionGameObject
         this.addSendingData(sendingDataIds.poseBody, "", 
             () => [this.pose.body.dir, this.pose.body.roll],
             (toFormat) => { return { dir: toFormat[0], roll: toFormat[1] }; },
-            (data, t) => {
+            (data) => {
                 this.pose.body = data.target;
                 this.pivots.body.t = 0;
                 this.pivots.body.target = getNewPivotQuat(data.target.dir, data.target.roll);
@@ -1215,11 +1215,11 @@ export class player extends collisionGameObject
         {
             const poseInd = i - sendingDataIds.poseHead;
             this.addSendingData(i, "", 
-                () => [Object.values(this.pose)[poseInd].dir],
+                () => { if(i == sendingDataIds.poseRightLeg) console.log([Object.values(this.pose)[poseInd].dir]); return [Object.values(this.pose)[poseInd].dir];},
                 (toFormat) => toFormat[0],
-                (data, t) => {
+                (data) => {
                     const pivot = Object.values(this.pivots)[poseInd];
-                    this.pose[Object.keys(this.pose)[poseInd]] = { dir: data.target, roll: 0 };
+                    this.pose[Object.keys(this.pose)[poseInd]] = { dir: data.target };
                     pivot.t = 0;
                     pivot.target = getNewPivotQuat(data.target);
                     return true;
@@ -1241,12 +1241,21 @@ export class player extends collisionGameObject
                 this.placedDoll.mesh.rotation.set(0, 0, data.target);
                 return true;
             });
-        /*this.addSendingData(sendingDataIds.placedDollPose, "",
-            () => {
-                const pd = this.placedDoll;
-                return pd == null ? Array() : [ pd.pose.body.dir
-            }
-        )*/
+        this.addSendingData(sendingDataIds.placedDollPose, "",
+            () => { return this.placedDoll == null ? Array(7) : Object.values(this.placedDoll.pose).flatMap(e => Object.values(e)); },
+            (toFormat) => toFormat,
+            (data) => {
+                const p = data.target;
+                this.placedDoll.setPose({
+                    body: { dir: p[0], roll: p[1] },
+                    head: { dir: p[2] },
+                    leftArm: { dir: p[3] },
+                    rightArm: { dir: p[4] },
+                    leftLeg: { dir: p[5] },
+                    rightLeg: { dir: p[6] }
+                });
+                return true;
+            });
     }
     send(action, full, all)
     {
@@ -1310,6 +1319,7 @@ export class player extends collisionGameObject
                 }
                 const direction = poseDirections[dirInd];
                 quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
+                console.log(d.pivot, this.pose[d.pivot], dirInd);
                 this.pose[d.pivot].dir = dirInd;
 
                 //snap roll to 45 degree increments
@@ -1320,7 +1330,8 @@ export class player extends collisionGameObject
                 const snappedRollInd = Math.round(roll / (Math.PI / 4));
                 const snappedRoll = snappedRollInd * (Math.PI / 4);
                 quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
-                this.pose[d.pivot].roll = snappedRollInd;
+                if(d.pivot == "body")
+                    this.pose.body.roll = snappedRollInd;
 
                 pivot.target = quat;
                 pivot.t = 0;
@@ -1522,7 +1533,7 @@ export class player extends collisionGameObject
         const menuOffset = -this.handler.camera.aspect * cmt.t * cmt.offset;
         this.handler.camera.position.set(menuOffset, 0, 0);
 
-        if(this.openMenu && prevT < 1)
+        if(this.playerMesh && this.openMenu && prevT < 1)
         {
             this.cameraOrbit.quaternion.slerp(cmt.targetOrbitQuat, Math.pow(cmt.t, 2));
             this.playerMesh.quaternion.slerp(cmt.targetMeshQuat, Math.pow(cmt.t, 2));
@@ -1629,6 +1640,7 @@ export class placedDoll extends collisionGameObject
     activePlayer;
     solid = false;
     dollMesh = null;
+    pose = {};
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), args.isLocal);
@@ -1641,6 +1653,8 @@ export class placedDoll extends collisionGameObject
     }
     setPose(pose)
     {
+        console.log("set pose: ", pose);
+        this.pose = pose;
         this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.dollMesh = scene;
             this.dollMesh.traverse((obj) => {
