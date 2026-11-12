@@ -16,10 +16,15 @@ const sendingDataIds = {
     xy: 0,
     z: 1,
     targetYaw: 2,
-    pose: 3,
-    placedDollPos: 4,
-    placedDollYaw: 5,
-    placedDollPose: 6
+    poseBody: 3,
+    poseHead: 4,
+    poseLeftArm: 5,
+    poseRightArm: 6,
+    poseLeftLeg: 7,
+    poseRightLeg: 8,
+    placedDollPos: 9,
+    placedDollYaw: 10,
+    placedDollPose: 11
 };
 
 //number of bytes needed to store all flags, 1 bit for full and 1 bit for every sendingDataId
@@ -63,6 +68,8 @@ const compression = {
 }
 
 const poseDirections = [];
+let poseDirectionUp;
+let poseDirectionDown;
 for(let i = -1; i <= 1; i++)
 {
     for(let j = -1; j <= 1; j++)
@@ -71,11 +78,33 @@ for(let i = -1; i <= 1; i++)
         {
             if(i == 0 && j == 0 && k == 0)
                 continue;
+            else if(i == 0 && k == 0)
+            {
+                if(j == 1)
+                    poseDirectionUp = poseDirections.length;
+                else
+                    poseDirectionDown = poseDirections.length;
+            }
             poseDirections.push(new THREE.Vector3(i, j, k).normalize());
         }
     }
 }
 
+
+function getNewPivotQuat(dir, roll = null)
+{
+    if(dir == null || dir < 0 || dir >= poseDirections.length)
+    {
+        console.error("Received invalid pivot direction!");
+        return new THREE.Quaternion();
+    }
+
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), poseDirections[dir]);
+    if(roll != null)
+        quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), roll * Math.PI / 4));
+
+    return quat;
+}
 
 function clampByBytes(value, bytes, signed)
 {
@@ -1089,6 +1118,15 @@ export class player extends collisionGameObject
         targetMeshQuat: null
     };
     pivots = {};
+    pose = {
+        body: { dir:poseDirectionUp, roll:0 },
+        head: { dir:poseDirectionUp, roll:0 },
+        leftArm: { dir:poseDirectionDown, roll:0 },
+        rightArm: { dir:poseDirectionDown, roll:0 },
+        leftLeg: { dir:poseDirectionDown, roll:0 },
+        rightLeg: { dir:poseDirectionDown, roll:0 }
+    };
+
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true);
@@ -1116,12 +1154,12 @@ export class player extends collisionGameObject
                 if(obj.isSkinnedMesh)
                     skinnedMesh = obj;
             });
-            this.pivots.rightArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_R_03");
-            this.pivots.leftArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_L_06");
-            this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
-            this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
-            this.pivots.head = skinnedMesh.skeleton.getBoneByName("Head_Bone_02");
             this.pivots.body = skinnedMesh.skeleton.getBoneByName("Hip_Bone_00");
+            this.pivots.head = skinnedMesh.skeleton.getBoneByName("Head_Bone_02");
+            this.pivots.leftArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_L_06");
+            this.pivots.rightArm = skinnedMesh.skeleton.getBoneByName("Arm_Upper_Bone_R_03");
+            this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
+            this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
 
             this.pivots.rightArm.rotation.z = Math.PI;
             this.pivots.leftArm.rotation.z = Math.PI;
@@ -1137,6 +1175,7 @@ export class player extends collisionGameObject
 
         this.setPos(args.startPos ?? new THREE.Vector3(0, 0, 10));
 
+        
         this.addSendingData(sendingDataIds.xy, "meters",
             () => [this.pos.x, this.pos.y], 
             (toFormat) => new THREE.Vector2().fromArray(toFormat),
@@ -1153,6 +1192,7 @@ export class player extends collisionGameObject
                 return t >= 1;
             });
 
+
         this.addSendingData(sendingDataIds.targetYaw, "radians",
             () => [this.meshTargetYaw],
             (toFormat) => toFormat[0],
@@ -1160,6 +1200,32 @@ export class player extends collisionGameObject
                 this.meshTargetYaw = data.target;
                 return true;
             });
+
+        
+        this.addSendingData(sendingDataIds.poseBody, "", 
+            () => [this.pose.body.dir, this.pose.body.roll],
+            (toFormat) => { return { dir: toFormat[0], roll: toFormat[1] }; },
+            (data, t) => {
+                this.pose.body = data.target;
+                this.pivots.body.t = 0;
+                this.pivots.body.target = getNewPivotQuat(data.target.dir, data.target.roll);
+                return true;
+            });
+        for(let i = sendingDataIds.poseHead; i <= sendingDataIds.poseRightLeg; i++)
+        {
+            const poseInd = i - sendingDataIds.poseHead;
+            this.addSendingData(i, "", 
+                () => [Object.values(this.pose)[poseInd].dir],
+                (toFormat) => toFormat[0],
+                (data, t) => {
+                    const pivot = Object.values(this.pivots)[poseInd];
+                    this.pose[Object.keys(this.pose)[poseInd]] = { dir: data.target, roll: 0 };
+                    pivot.t = 0;
+                    pivot.target = getNewPivotQuat(data.target);
+                    return true;
+                });
+        }
+
 
         this.addSendingData(sendingDataIds.placedDollPos, "metersNoDelta",
             () => { return this.placedDoll == null ? Array(3) : this.placedDoll.getPos().toArray(); },
@@ -1175,6 +1241,12 @@ export class player extends collisionGameObject
                 this.placedDoll.mesh.rotation.set(0, 0, data.target);
                 return true;
             });
+        /*this.addSendingData(sendingDataIds.placedDollPose, "",
+            () => {
+                const pd = this.placedDoll;
+                return pd == null ? Array() : [ pd.pose.body.dir
+            }
+        )*/
     }
     send(action, full, all)
     {
@@ -1225,24 +1297,30 @@ export class player extends collisionGameObject
 
                 //get closest direction in 26 voxel neighborhood and snap to it
                 const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
-                let direction = poseDirections[0];
                 let bestDot = 0;
-                for(const dir of poseDirections)
+                let dirInd = 0;
+                for(const [i, dir] of poseDirections.entries())
                 {
                     const dot = forward.dot(dir);
                     if(dot > bestDot)
                     {
                         bestDot = dot;
-                        direction = dir;
+                        dirInd = i;
                     }
                 }
+                const direction = poseDirections[dirInd];
                 quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
+                this.pose[d.pivot].dir = dirInd;
 
                 //snap roll to 45 degree increments
                 const projected = quat.x * direction.x + quat.y * direction.y + quat.z * direction.z;
-                const roll = 2 * Math.atan2(projected, quat.w);
-                const snappedRoll = Math.round(roll / (Math.PI / 4)) * (Math.PI / 4);
+                let roll = 2 * Math.atan2(projected, quat.w);
+                //make sure roll is within range of 0 - 2PI
+                roll = ((roll % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+                const snappedRollInd = Math.round(roll / (Math.PI / 4));
+                const snappedRoll = snappedRollInd * (Math.PI / 4);
                 quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
+                this.pose[d.pivot].roll = snappedRollInd;
 
                 pivot.target = quat;
                 pivot.t = 0;
@@ -1330,6 +1408,22 @@ export class player extends collisionGameObject
     }
     tick(dt, time)
     {
+        //slerp pivots towards target rotation 
+        for(const [id, piv] of Object.entries(this.pivots))
+        {
+            if(piv.target)
+            {
+                piv.t ??= 0;
+                piv.t = Math.min(1, piv.t + dt * 2);
+                piv.quaternion.slerp(piv.target, Math.sqrt(piv.t));
+                if(piv.t >= 1)
+                {
+                    piv.target = null;
+                    piv.t = 0;
+                }
+            }
+        }
+
         if(!this.isLocal)
         {
             if(this.playerMesh)
@@ -1408,6 +1502,7 @@ export class player extends collisionGameObject
                 this.placedDoll = this.handler.newGameObject(placedDoll, {
                     pos: this.getPos(), 
                     yaw: this.meshYaw - Math.PI,
+                    pose: this.pose,
                     isLocal: true 
                 });
                 this.insidePlacedDoll = true;
@@ -1417,23 +1512,6 @@ export class player extends collisionGameObject
         }
         else if(this.placeProgress > 0)
             this.placeProgress = Math.max(0, this.placeProgress - dt);
-        
-
-        //slerp pivots towards target rotation 
-        for(const [id, piv] of Object.entries(this.pivots))
-        {
-            if(piv.target)
-            {
-                piv.t ??= 0;
-                piv.t = Math.min(1, piv.t + dt * 2);
-                piv.quaternion.slerp(piv.target, Math.sqrt(piv.t));
-                if(piv.t >= 1)
-                {
-                    piv.target = null;
-                    piv.t = 0;
-                }
-            }
-        }
 
 
         //calculate camera offsets and rotations beased on cameraMenuTransition
@@ -1558,11 +1636,10 @@ export class placedDoll extends collisionGameObject
         this.setPos(args.pos);
         if(args.yaw)
             this.mesh.rotation.z = args.yaw;
-        //if(args.pose)
-        //  this.setPose(args.pose);
-        this.setPose();
+        if(args.pose)
+          this.setPose(args.pose);
     }
-    setPose()
+    setPose(pose)
     {
         this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.dollMesh = scene;
@@ -1572,6 +1649,18 @@ export class placedDoll extends collisionGameObject
             });
             this.mesh.add(this.dollMesh);
             this.dollMesh.rotateZ(Math.PI);
+            
+            let skel;
+            scene.traverse(obj => {
+                if(obj.isSkinnedMesh)
+                    skel = obj.skeleton;
+            });
+            skel.getBoneByName("Hip_Bone_00").quaternion.copy(getNewPivotQuat(pose.body.dir, pose.body.roll));
+            skel.getBoneByName("Head_Bone_02").quaternion.copy(getNewPivotQuat(pose.head.dir));
+            skel.getBoneByName("Arm_Upper_Bone_L_06").quaternion.copy(getNewPivotQuat(pose.leftArm.dir));
+            skel.getBoneByName("Arm_Upper_Bone_R_03").quaternion.copy(getNewPivotQuat(pose.rightArm.dir));
+            skel.getBoneByName("Leg_Upper_Bone_L_09").quaternion.copy(getNewPivotQuat(pose.leftLeg.dir));
+            skel.getBoneByName("Leg_Upper_Bone_R_012").quaternion.copy(getNewPivotQuat(pose.rightLeg.dir));
         });
     }
     tick(dt, time)
