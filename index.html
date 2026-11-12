@@ -228,5 +228,13 @@
         }
 
         function pivotReset(event) { document.dispatchEvent(new CustomEvent("pivotReset")); }
+
+
+        const colorPicker = document.getElementById("colorPicker");
+        colorPicker.addEventListener("input", (event) => {
+            document.dispatchEvent(new CustomEvent("colorChange", {
+                detail: { color: event.target.value }
+            }));
+        });
     </script>
 </html>

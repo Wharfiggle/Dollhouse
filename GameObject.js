@@ -22,9 +22,11 @@ const sendingDataIds = {
     poseRightArm: 6,
     poseLeftLeg: 7,
     poseRightLeg: 8,
-    placedDollPos: 9,
-    placedDollYaw: 10,
-    placedDollPose: 11
+    color: 9,
+    placedDollPos: 10,
+    placedDollYaw: 11,
+    placedDollColor: 12,
+    placedDollPose: 13
 };
 
 //number of bytes needed to store all flags, 1 bit for full and 1 bit for every sendingDataId
@@ -34,9 +36,10 @@ const flagBytes = Math.ceil((1 + Object.keys(sendingDataIds).length) / 8);
 //bytes must be a power of 2
 const compression = {
     "": { //default
-        compress: (v) => v,     //method to compress given value
+        compress: (v) => v,     //method to compress given value (can return a single value or an array of values)
         decompress: (v) => v,   //method to decompress given value
-        bytes: 1,               //number of bytes needed to store
+        numValues: 1,           //number of values (number of values returned in compress. If not an array, should just be 1)
+        bytes: 1,               //number of bytes needed to store per value
         signed: true,           //does it matter if this unit is negative?
         delta: false,           //can compressed deltas be calculated and sent most of the time instead of the full value? (should be false if bytes is 1)
         clamp: false,           //should a value be clamped instead of allowing overflow?
@@ -44,6 +47,7 @@ const compression = {
     radians: { 
         compress: (v) => { return Math.round(((v + Math.PI) / (Math.PI * 2)) * 255); },
         decompress: (v) => { return (v / 255.0) * (Math.PI * 2) - Math.PI; },
+        numValues: 1,
         bytes: 1,
         signed: false,
         delta: false,
@@ -52,6 +56,7 @@ const compression = {
     meters: {
         compress: (v) => { return Math.round(v * 100); },
         decompress: (v) => { return v / 100; },
+        numValues: 1,
         bytes: 2,
         signed: true,
         delta: true,
@@ -60,10 +65,20 @@ const compression = {
     metersNoDelta: {
         compress: (v) => { return Math.round(v * 100); },
         decompress: (v) => { return v / 100; },
+        numValues: 1,
         bytes: 2,
         signed: true,
         delta: false,
         clamp: true
+    },
+    color: {
+        compress: (v) => [v.r * 255, v.g * 255, v.b * 255],
+        decompress: (v) => new THREE.Color(`rgb(${v[0]}, ${v[1]}, ${v[2]})`),
+        numValues: 3,
+        bytes: 1,
+        signed: false,
+        delta: false,
+        clamp: false
     }
 }
 
@@ -435,13 +450,13 @@ export class gameObject extends EventTarget
                 const lastSent = lsd[1];
                 const lastWasDelta = lsd[2];
                 //only send if all is true, if we're sending full and the last sent was a delta, or if the value has changed
-                if(all || (full && lastWasDelta) || !value.every((v, i) => v == lastSent[i]))
+                if(all || (full && lastWasDelta) || !value.every((v, i) => v == lastFull[i]))
                 {
                     let sentData = value;
                     if(sendDelta)
                         sentData = subArrays(value, lastFull);
                     data[key] = sentData;
-                    this.lastSentData[key] = [value, sentData, sendDelta]; //[full value, actual sent data (can be delta or full)]
+                    this.lastSentData[key] = [value, sentData, sendDelta]; //[full value, actual sent data (can be delta or full), bool for if the sent data was a delta]
                     anyData = true;
                 }
             }
@@ -470,7 +485,7 @@ export class gameObject extends EventTarget
                 const isDelta = !full && comp.delta;
                 const numBytes = isDelta ? comp.bytes / 2 : comp.bytes;
                 dataNumBytes[id] = numBytes;
-                totalBytes += numBytes * value.length;
+                totalBytes += numBytes * value.length * comp.numValues;
             }
 
             //create buffer, add flags, then add data
@@ -488,10 +503,15 @@ export class gameObject extends EventTarget
                 {
                     //clamp so values that are too big to fit in their allocated bytes dont roll over
                     let compressedValue = comp.compress(value[i]);
-                    if(comp.clamp)
-                        compressedValue = clampByBytes(compressedValue, valueBytes, comp.signed);
-                    view[setter](offset, compressedValue);
-                    offset += valueBytes;
+                    if(comp.numValues == 1)
+                        compressedValue = [compressedValue];
+                    for(let cv of compressedValue)
+                    {
+                        if(comp.clamp)
+                            cv = clampByBytes(cv, valueBytes, comp.signed);
+                        view[setter](offset, cv);
+                        offset += valueBytes;
+                    }
                 }
             }
 
@@ -1049,8 +1069,18 @@ export class multiplayer
                     data[id] = [];
                     for(let j = 0; j < valLength; j++)
                     {
-                        data[id].push(comp.decompress(view[getter](offset)));
+                        let value = view[getter](offset);
                         offset += valueBytes;
+                        if(comp.numValues > 1)
+                        {
+                            value = [value];
+                            for(let k = 1; k < comp.numValues; k++)
+                            {
+                                value.push(view[getter](offset));
+                                offset += valueBytes;
+                            }
+                        }
+                        data[id].push(comp.decompress(value));
                     }
                 }
             }
@@ -1136,6 +1166,8 @@ export class player extends collisionGameObject
         leftLeg: { dir:poseDirectionDown },
         rightLeg: { dir:poseDirectionDown }
     };
+    material = null;
+    color = new THREE.Color("rgb(255,0,255)");
 
     constructor(args)
     {
@@ -1149,11 +1181,14 @@ export class player extends collisionGameObject
         this.cameraRoot.position.set(0, -3, 3);
         this.cameraRoot.rotateX(-Math.PI / 4);
 
+        this.material = this.handler.materials.player.clone();
+        this.material.color.set(this.color);
+
         this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.playerMesh = scene;
             this.playerMesh.traverse((obj) => {
                 if(obj.isMesh)
-                    obj.material = this.handler.materials.player.clone();
+                    obj.material = this.material;
             });
             this.handler.scene.add(this.playerMesh);
             this.playerMesh.rotateZ(this.meshYaw);
@@ -1236,6 +1271,15 @@ export class player extends collisionGameObject
                 });
         }
 
+        this.addSendingData(sendingDataIds.color, "color",
+            () => [this.color],
+            (toFormat) => toFormat[0],
+            (data) => {
+                this.setColor(data.target);
+                return true;
+            }
+        )
+
 
         this.addSendingData(sendingDataIds.placedDollPos, "metersNoDelta",
             () => { return this.placedDoll == null ? Array(3) : this.placedDoll.getPos().toArray(); },
@@ -1251,6 +1295,14 @@ export class player extends collisionGameObject
                 this.placedDoll.mesh.rotation.set(0, 0, data.target);
                 return true;
             });
+        this.addSendingData(sendingDataIds.placedDollColor, "color",
+            () => { return this.placedDoll == null ? Array(1) : [this.placedDoll.color]; },
+            (toFormat) => toFormat[0],
+            (data) => {
+                this.placedDoll.color = data.target;
+                return true;
+            }
+        )
         this.addSendingData(sendingDataIds.placedDollPose, "",
             () => { return this.placedDoll == null ? Array(7) : Object.values(this.placedDoll.pose).flatMap(e => Object.values(e)); },
             (toFormat) => toFormat,
@@ -1285,7 +1337,7 @@ export class player extends collisionGameObject
             this.handler.camera.position.set(0, 0, 0);
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
 
-            this.setCollider(0.3, 2, new THREE.Vector3(), false);
+            this.setCollider(0.3, 1.7, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
 
             //lock mouse when page is clicked, but only if menu is not open
@@ -1353,6 +1405,11 @@ export class player extends collisionGameObject
                     piv.target = piv.restQuat;
                     piv.t = 0;
                 }
+            });
+
+            //event received from index.html when color is changed
+            document.addEventListener("colorChange", (event) => {
+                this.setColor(event.detail.color);
             });
 
             this.handler.input.subscribeToTouch(this, KEY_PRESSED, (e) => {
@@ -1423,6 +1480,7 @@ export class player extends collisionGameObject
             this.ui.canvas.removeEventListener("click");
             document.removeEventListener("pivotTurn");
             document.removeEventListener("pivotReset");
+            document.removeEventListener("colorChange");
             this.handler.input.unsubscribeFromAllInput(this);
         }
     }
@@ -1523,6 +1581,7 @@ export class player extends collisionGameObject
                     pos: this.getPos(), 
                     yaw: this.meshYaw - Math.PI,
                     pose: this.pose,
+                    color: this.color,
                     isLocal: true 
                 });
                 this.insidePlacedDoll = true;
@@ -1616,6 +1675,11 @@ export class player extends collisionGameObject
         this.meshYaw = yaw;
         this.playerMesh.rotation.z = yaw;
     }
+    setColor(color)
+    {
+        this.color = new THREE.Color(color);
+        this.material.color.set(this.color);
+    }
     setOpenMenu(open)
     {
         if(this.openMenu == open)
@@ -1650,6 +1714,8 @@ export class placedDoll extends collisionGameObject
     solid = false;
     dollMesh = null;
     pose = {};
+    material = null;
+    color = new THREE.Color("rgb(255, 0, 255)");
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), args.isLocal);
@@ -1657,6 +1723,8 @@ export class placedDoll extends collisionGameObject
         this.setPos(args.pos);
         if(args.yaw)
             this.mesh.rotation.z = args.yaw;
+        if(args.color)
+            this.color = args.color;
         if(args.pose)
           this.setPose(args.pose);
     }
@@ -1667,7 +1735,11 @@ export class placedDoll extends collisionGameObject
             this.dollMesh = scene;
             this.dollMesh.traverse((obj) => {
                 if(obj.isMesh)
-                    obj.material = this.handler.materials.placedDoll;
+                {
+                    this.material = this.handler.materials.placedDoll.clone();
+                    obj.material = this.material;
+                    this.material.color.set(this.color);
+                }
             });
             this.mesh.add(this.dollMesh);
             this.dollMesh.rotateZ(Math.PI);
@@ -1683,6 +1755,8 @@ export class placedDoll extends collisionGameObject
             skel.getBoneByName("Arm_Upper_Bone_R_03").quaternion.copy(getNewPivotQuat(pose.rightArm.dir));
             skel.getBoneByName("Leg_Upper_Bone_L_09").quaternion.copy(getNewPivotQuat(pose.leftLeg.dir));
             skel.getBoneByName("Leg_Upper_Bone_R_012").quaternion.copy(getNewPivotQuat(pose.rightLeg.dir));
+
+            this.setCollider(0.3, 1.7, new THREE.Vector3(), true, false);
         });
     }
     tick(dt, time)
@@ -1692,10 +1766,8 @@ export class placedDoll extends collisionGameObject
             this.activePlayer.insidePlacedDoll = false;
             this.solid = true;
             this.setColliderActive(true);
-            this.dollMesh.traverse((obj) => {
-                if(obj.isMesh)
-                    obj.material = this.handler.materials.player;
-            });
+            this.material.copy(this.handler.materials.player);
+            this.material.color.set(this.color);
         }
     }
 }

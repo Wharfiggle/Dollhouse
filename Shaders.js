@@ -41,9 +41,9 @@ function establishOnBeforeCompileChain(material, features) //features: array of 
 export function getMaterials(args)
 {
     const materials = {
-        player: new THREE.MeshStandardMaterial({ color:"purple" }),
+        player: new THREE.MeshStandardMaterial({ color:"#ff00ff" }),
         ground: new THREE.MeshStandardMaterial({ color:"white", side:THREE.DoubleSide }),
-        placedDoll: new THREE.MeshStandardMaterial({ transparent: true, color: "purple", opacity: 0.5 })
+        placedDoll: new THREE.MeshStandardMaterial({ transparent: true, color: "#ff00ff", opacity: 0.5 })
     }
 
     return materials;
