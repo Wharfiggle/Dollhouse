@@ -91,7 +91,7 @@ for(let i = -1; i <= 1; i++)
 }
 
 
-function getNewPivotQuat(dir, roll = null)
+function getNewPivotQuat(dir, roll = null, referenceQuat = null)
 {
     if(dir == null || dir < 0 || dir >= poseDirections.length)
     {
@@ -99,7 +99,14 @@ function getNewPivotQuat(dir, roll = null)
         return new THREE.Quaternion();
     }
 
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), poseDirections[dir]);
+    const quat = new THREE.Quaternion();
+    const forward = new THREE.Vector3(0, 1, 0);
+    if(referenceQuat != null)
+    {
+        quat.copy(referenceQuat);
+        forward.applyQuaternion(referenceQuat);
+    }
+    quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, poseDirections[dir]));
     if(roll != null)
         quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), roll * Math.PI / 4));
 
@@ -1208,20 +1215,20 @@ export class player extends collisionGameObject
             (data) => {
                 this.pose.body = data.target;
                 this.pivots.body.t = 0;
-                this.pivots.body.target = getNewPivotQuat(data.target.dir, data.target.roll);
+                this.pivots.body.target = getNewPivotQuat(data.target.dir, data.target.roll, this.pivots.body.quaternion);
                 return true;
             });
         for(let i = sendingDataIds.poseHead; i <= sendingDataIds.poseRightLeg; i++)
         {
-            const poseInd = i - sendingDataIds.poseHead;
+            const poseInd = i - sendingDataIds.poseBody;
             this.addSendingData(i, "", 
-                () => { if(i == sendingDataIds.poseRightLeg) console.log([Object.values(this.pose)[poseInd].dir]); return [Object.values(this.pose)[poseInd].dir];},
+                () => [Object.values(this.pose)[poseInd].dir],
                 (toFormat) => toFormat[0],
                 (data) => {
                     const pivot = Object.values(this.pivots)[poseInd];
                     this.pose[Object.keys(this.pose)[poseInd]] = { dir: data.target };
                     pivot.t = 0;
-                    pivot.target = getNewPivotQuat(data.target);
+                    pivot.target = getNewPivotQuat(data.target, null, pivot.quaternion);
                     return true;
                 });
         }
@@ -1319,7 +1326,6 @@ export class player extends collisionGameObject
                 }
                 const direction = poseDirections[dirInd];
                 quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
-                console.log(d.pivot, this.pose[d.pivot], dirInd);
                 this.pose[d.pivot].dir = dirInd;
 
                 //snap roll to 45 degree increments
@@ -1653,7 +1659,6 @@ export class placedDoll extends collisionGameObject
     }
     setPose(pose)
     {
-        console.log("set pose: ", pose);
         this.pose = pose;
         this.handler.requestMesh("./assets/PegMan.glb", (scene, animations) => {
             this.dollMesh = scene;
