@@ -1168,6 +1168,7 @@ export class player extends collisionGameObject
     };
     material = null;
     color = new THREE.Color("rgb(255,0,255)");
+    lockYawToCamera = false;
 
     constructor(args)
     {
@@ -1457,6 +1458,9 @@ export class player extends collisionGameObject
                     this.cameraOrbit.rotateX(-4 * e.deltaPos.y / this.ui.height);
                     //clamp camera to not roll backwards
                     this.cameraOrbit.rotation.x = Math.max(-Math.PI * 0.25, Math.min(Math.PI * 0.65, this.cameraOrbit.rotation.x));
+
+                    if(this.lockYawToCamera)
+                        this.setMeshYaw(this.mesh.rotation.z);
                 }
             });
             this.handler.input.subscribeToButton(this, "e", KEY_RELEASED, () => {
@@ -1471,6 +1475,11 @@ export class player extends collisionGameObject
                 this.climbing = true; 
             });
             this.handler.input.subscribeToButton(this, " ", KEY_RELEASED, () => { this.climbing = false; });
+            this.handler.input.subscribeToButton(this, "rightmouse", KEY_PRESSED, () => { 
+                this.setMeshYaw(this.mesh.rotation.z);
+                this.lockYawToCamera = true;
+            });
+            this.handler.input.subscribeToButton(this, "rightmouse", KEY_RELEASED, () => { this.lockYawToCamera = false; });
             
             //TODO: remove, debug
             this.handler.input.subscribeToButton(this, "`", KEY_PRESSED, () => { this.handler.collision.setDebugDraw(!this.handler.collision.debugDraw); });
@@ -1533,8 +1542,12 @@ export class player extends collisionGameObject
             )
 
             this.addPos(movement.multiplyScalar(this.speed * dt * Math.min(1, moveIn.length())));
-            this.meshTargetYaw = Math.atan2(movement.y, movement.x) - Math.PI / 2;
-            this.rotateMeshTowardsTargetYaw(dt);
+            
+            if(!this.lockYawToCamera)
+            {
+                this.meshTargetYaw = Math.atan2(movement.y, movement.x) - Math.PI / 2;
+                this.rotateMeshTowardsTargetYaw(dt);
+            }
         }
         else if(this.playerMesh)
             this.meshTargetYaw = this.playerMesh.rotation.z;
