@@ -154,8 +154,9 @@
 
 
         const container = document.getElementById("container");
-        const fullscreenOnlyRule = rules.find(r => r.selectorText == ".fullscreenOnly");
         const smallscreenOnlyRule = rules.find(r => r.selectorText == ".smallscreenOnly");
+        if(!document.fullscreenEnabled)
+            smallscreenOnlyRule.style.display = "none";
 
         function fullscreen(event)
         {
