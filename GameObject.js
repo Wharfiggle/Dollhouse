@@ -128,6 +128,51 @@ function getNewPivotQuat(dir, roll = null, referenceQuat = null)
     return quat;
 }
 
+//store reference points on the limbs of the model to calculate how big the collider should be
+function addPivotReferencePoint(pivot, pos, radius)
+{
+    const rp = new THREE.Object3D();
+    pivot.add(rp);
+    rp.position.copy(pos);
+    return { object: rp, radius: radius };
+}
+function addPivotReferencePoints(pivots)
+{
+    const result = [];
+    result.push(addPivotReferencePoint(pivots.rightArm, new THREE.Vector3(0, 0, 0),     0.1));
+    result.push(addPivotReferencePoint(pivots.rightArm, new THREE.Vector3(0, 6.8, 0),   0.075));
+    result.push(addPivotReferencePoint(pivots.leftArm, new THREE.Vector3(0, 0, 0),      0.1));
+    result.push(addPivotReferencePoint(pivots.leftArm, new THREE.Vector3(0, 6.8, 0),    0.075));
+    result.push(addPivotReferencePoint(pivots.rightLeg, new THREE.Vector3(0, 0, 0),     0.1));
+    result.push(addPivotReferencePoint(pivots.rightLeg, new THREE.Vector3(0, 7, 0),     0.075));
+    result.push(addPivotReferencePoint(pivots.leftLeg, new THREE.Vector3(0, 0, 0),      0.1));
+    result.push(addPivotReferencePoint(pivots.leftLeg, new THREE.Vector3(0, 7, 0),      0.075));
+    result.push(addPivotReferencePoint(pivots.head, new THREE.Vector3(0, 0.65, 0),      0.125));
+    return result;
+}
+
+function calculatePoseCollision(pivotReferencePoints, poseCollision = null, updatedPivot = null)
+{
+    if(poseCollision == null || updatedPivot == null)
+    {
+        //iterate through all pivotreferencepoints to find which points have the highest and lowest world position (account for radius too), then return as { highest: a, lowest: b }
+    }
+    else
+    {
+        //see if updated pivots reference points are lower or higher than current lowest and highest, update accordingly, then return
+    }
+}
+
+function setColliderFromPoseCollision(collisionGameObject, poseCollision)
+{
+    const pc = poseCollision;
+    const cgc = collisionGameObject;
+    cgc.collider.height = pc.highest - pc.lowest;
+    cgc.collider.set(0, 0, pc.lowest - cgc.position.z + cgc.height / 2);
+    this.calculateColliderWorldPos(true);
+}
+
+
 function clampByBytes(value, bytes, signed)
 {
     const num = Math.pow(2, bytes * 8);
@@ -1126,6 +1171,8 @@ export class player extends collisionGameObject
 {
     speed = 3;
     climbSpeed = 1;
+    defaultHeight = 1.7;
+    radius = 0.3;
     touchMove = {
         stickRadius: 50,
         maxDist: 100,
@@ -1166,6 +1213,11 @@ export class player extends collisionGameObject
         leftLeg: { dir:poseDirectionDown },
         rightLeg: { dir:poseDirectionDown }
     };
+    pivotReferencePoints = [];
+    poseCollision = {
+        highest: 0,
+        lowest: 0
+    }
     material = null;
     color = new THREE.Color("rgb(255,0,255)");
     lockYawToCamera = false;
@@ -1195,6 +1247,7 @@ export class player extends collisionGameObject
             this.playerMesh.rotateZ(this.meshYaw);
             this.playerMesh.position.copy(this.getPos());
 
+            //set up bones as pivots for player manipulation
             let skinnedMesh = null;
             scene.traverse(obj => {
                 if(obj.isSkinnedMesh)
@@ -1207,13 +1260,17 @@ export class player extends collisionGameObject
             this.pivots.leftLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_L_09");
             this.pivots.rightLeg = skinnedMesh.skeleton.getBoneByName("Leg_Upper_Bone_R_012");
 
+            //set arms at side
             this.pivots.rightArm.rotation.z = Math.PI;
             this.pivots.leftArm.rotation.z = Math.PI;
 
+            //store resting quaternions for pose resetting
             for(const [id, piv] of Object.entries(this.pivots))
             {
                 piv.restQuat = piv.quaternion.clone();
             }
+
+            addPivotReferencePoints(this.pivots);
         });
 
         this.id = args.id ?? 0;
@@ -1252,9 +1309,7 @@ export class player extends collisionGameObject
             () => [this.pose.body.dir, this.pose.body.roll],
             (toFormat) => { return { dir: toFormat[0], roll: toFormat[1] }; },
             (data) => {
-                this.pose.body = data.target;
-                this.pivots.body.t = 0;
-                this.pivots.body.target = getNewPivotQuat(data.target.dir, data.target.roll, this.pivots.body.quaternion);
+                this.setPivotDirection("body", data.target.dir, data.target.roll);
                 return true;
             });
         for(let i = sendingDataIds.poseHead; i <= sendingDataIds.poseRightLeg; i++)
@@ -1264,10 +1319,8 @@ export class player extends collisionGameObject
                 () => [Object.values(this.pose)[poseInd].dir],
                 (toFormat) => toFormat[0],
                 (data) => {
-                    const pivot = Object.values(this.pivots)[poseInd];
-                    this.pose[Object.keys(this.pose)[poseInd]] = { dir: data.target };
-                    pivot.t = 0;
-                    pivot.target = getNewPivotQuat(data.target, null, pivot.quaternion);
+                    const key = Object.keys(this.pose)[poseInd];
+                    this.setPivotDirection(key, data.target);
                     return true;
                 });
         }
@@ -1338,7 +1391,7 @@ export class player extends collisionGameObject
             this.handler.camera.position.set(0, 0, 0);
             this.handler.camera.rotation.set(Math.PI / 2, 0, 0);
 
-            this.setCollider(0.3, 1.7, new THREE.Vector3(), false);
+            this.setCollider(this.radius, this.defaultHeight, new THREE.Vector3(), false);
             this.climbCollider = new collisionGameObject(this.handler);
 
             //lock mouse when page is clicked, but only if menu is not open
@@ -1382,7 +1435,6 @@ export class player extends collisionGameObject
                 }
                 const direction = poseDirections[dirInd];
                 quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
-                this.pose[d.pivot].dir = dirInd;
 
                 //snap roll to 45 degree increments
                 const projected = quat.x * direction.x + quat.y * direction.y + quat.z * direction.z;
@@ -1392,11 +1444,8 @@ export class player extends collisionGameObject
                 const snappedRollInd = Math.round(roll / (Math.PI / 4));
                 const snappedRoll = snappedRollInd * (Math.PI / 4);
                 quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
-                if(d.pivot == "body")
-                    this.pose.body.roll = snappedRollInd;
-
-                pivot.target = quat;
-                pivot.t = 0;
+                
+                this.setPivotDirection(d.pivot, dirInd, d.pivot == "body" ? snappedRollInd : null, quat);
             });
 
             //event received from index.html when reset button is pressed
@@ -1688,6 +1737,15 @@ export class player extends collisionGameObject
         this.meshYaw = yaw;
         this.playerMesh.rotation.z = yaw;
     }
+    setPivotDirection(pivotName, dir, roll = null, quat = null)
+    {
+        this.pose[pivotName] = { dir: dir, roll: roll };
+        const pivot = this.pivots[pivotName];
+        pivot.t = 0;
+        pivot.target = quat != null ? quat : getNewPivotQuat(dir, roll, pivot.quaternion);
+        
+        //TODO: set collider based on newly updated pose collision, AND handle case where playerMesh == null still (probably just do nothing)
+    }
     setColor(color)
     {
         this.color = new THREE.Color(color);
@@ -1769,7 +1827,7 @@ export class placedDoll extends collisionGameObject
             skel.getBoneByName("Leg_Upper_Bone_L_09").quaternion.copy(getNewPivotQuat(pose.leftLeg.dir));
             skel.getBoneByName("Leg_Upper_Bone_R_012").quaternion.copy(getNewPivotQuat(pose.rightLeg.dir));
 
-            this.setCollider(0.3, 1.7, new THREE.Vector3(), true, false);
+            this.setCollider(this.activePlayer.radius, this.activePlayer.defaultHeight, new THREE.Vector3(), true, false);
         });
     }
     tick(dt, time)
