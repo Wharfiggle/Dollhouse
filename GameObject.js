@@ -1765,7 +1765,7 @@ export class player extends collisionGameObject
         const origQuat = pivot.quaternion.clone();
         pivot.quaternion.copy(targetQuat);
         
-        if(playerMesh != null)
+        if(this.playerMesh != null)
         {
             const prevLowest = this.poseCollision.lowest;
             const prevHighest = this.poseCollision.highest;
