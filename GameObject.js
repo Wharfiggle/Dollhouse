@@ -128,48 +128,28 @@ function getNewPivotQuat(dir, roll = null, referenceQuat = null)
     return quat;
 }
 
-//store reference points on the limbs of the model to calculate how big the collider should be
-function addPivotReferencePoint(pivot, pos, radius)
+//store reference points on a given set of pivots
+//used to calculate pose collision
+function addPivotReferencePoint(pivots, pivotName, pos, radius)
 {
     const rp = new THREE.Object3D();
-    pivot.add(rp);
+    pivots[pivotName].add(rp);
     rp.position.copy(pos);
-    return { object: rp, radius: radius };
+    return { pivotName: pivotName, object: rp, radius: radius };
 }
 function addPivotReferencePoints(pivots)
 {
     const result = [];
-    result.push(addPivotReferencePoint(pivots.rightArm, new THREE.Vector3(0, 0, 0),     0.1));
-    result.push(addPivotReferencePoint(pivots.rightArm, new THREE.Vector3(0, 6.8, 0),   0.075));
-    result.push(addPivotReferencePoint(pivots.leftArm, new THREE.Vector3(0, 0, 0),      0.1));
-    result.push(addPivotReferencePoint(pivots.leftArm, new THREE.Vector3(0, 6.8, 0),    0.075));
-    result.push(addPivotReferencePoint(pivots.rightLeg, new THREE.Vector3(0, 0, 0),     0.1));
-    result.push(addPivotReferencePoint(pivots.rightLeg, new THREE.Vector3(0, 7, 0),     0.075));
-    result.push(addPivotReferencePoint(pivots.leftLeg, new THREE.Vector3(0, 0, 0),      0.1));
-    result.push(addPivotReferencePoint(pivots.leftLeg, new THREE.Vector3(0, 7, 0),      0.075));
-    result.push(addPivotReferencePoint(pivots.head, new THREE.Vector3(0, 0.65, 0),      0.125));
+    result.push(addPivotReferencePoint(pivots, "rightArm", new THREE.Vector3(0, 0, 0),     0.1));
+    result.push(addPivotReferencePoint(pivots, "rightArm", new THREE.Vector3(0, 6.8, 0),   0.075));
+    result.push(addPivotReferencePoint(pivots, "leftArm", new THREE.Vector3(0, 0, 0),      0.1));
+    result.push(addPivotReferencePoint(pivots, "leftArm", new THREE.Vector3(0, 6.8, 0),    0.075));
+    result.push(addPivotReferencePoint(pivots, "rightLeg", new THREE.Vector3(0, 0, 0),     0.1));
+    result.push(addPivotReferencePoint(pivots, "rightLeg", new THREE.Vector3(0, 7, 0),     0.075));
+    result.push(addPivotReferencePoint(pivots, "leftLeg", new THREE.Vector3(0, 0, 0),      0.1));
+    result.push(addPivotReferencePoint(pivots, "leftLeg", new THREE.Vector3(0, 7, 0),      0.075));
+    result.push(addPivotReferencePoint(pivots, "head", new THREE.Vector3(0, 0.65, 0),      0.125));
     return result;
-}
-
-function calculatePoseCollision(pivotReferencePoints, poseCollision = null, updatedPivot = null)
-{
-    if(poseCollision == null || updatedPivot == null)
-    {
-        //iterate through all pivotreferencepoints to find which points have the highest and lowest world position (account for radius too), then return as { highest: a, lowest: b }
-    }
-    else
-    {
-        //see if updated pivots reference points are lower or higher than current lowest and highest, update accordingly, then return
-    }
-}
-
-function setColliderFromPoseCollision(collisionGameObject, poseCollision)
-{
-    const pc = poseCollision;
-    const cgc = collisionGameObject;
-    cgc.collider.height = pc.highest - pc.lowest;
-    cgc.collider.set(0, 0, pc.lowest - cgc.position.z + cgc.height / 2);
-    this.calculateColliderWorldPos(true);
 }
 
 
@@ -657,6 +637,7 @@ export class collisionGameObject extends gameObject
     }
     prevPos = new THREE.Vector3();
     prevYaw =  null;
+    colliderChanged = false;
     groundLevel = 0;
     constructor(h = null, mesh = null, isLocal = true)
     {
@@ -664,17 +645,30 @@ export class collisionGameObject extends gameObject
     }
     setCollider(radius, height, bottomPos, isStatic, setActive = true)
     {
-        this.collider.radius = radius;
-        this.collider.height = height;
-        this.collider.pos.set(bottomPos.x, bottomPos.y, bottomPos.z + height / 2);
+        this.setColliderRadius(radius);
+        this.setColliderHeight(height);
+        this.setColliderPos(new THREE.Vector3(bottomPos.x, bottomPos.y, bottomPos.z + height / 2));
         this.setColliderStatic(isStatic);
-        if(setActive && !this.collider.active)
-            this.setColliderActive(true);
-        else
-            this.calculateColliderWorldPos(true);
+        this.setColliderActive(setActive);
 
         if(this.collider.debugDrawMesh)
             this.setDebugDraw(true);
+    }
+    setColliderRadius(radius)
+    {
+        this.collider.radius = radius;
+        this.collider.colliderChanged = true;
+    }
+    setColliderHeight(height)
+    {
+        this.collider.height = height;
+        this.collider.colliderChanged = true;
+    }
+    setColliderPos(pos)
+    {
+        this.collider.pos.copy(pos);
+        this.calculateColliderWorldPos(true);
+        this.collider.colliderChanged = true;
     }
     setColliderStatic(isStatic)
     {
@@ -735,6 +729,8 @@ export class collisionGameObject extends gameObject
             }
         }
 
+        //investigate reset, doesnt seem right. could leave behind references of self in old cells. removing it breaks collision though
+        //regardless, need better comments for what reset actually does and when to use it
         if(reset)
             this.collider.cells = [];
         if(this.collider.static && this.collider.active)
@@ -761,6 +757,28 @@ export class collisionGameObject extends gameObject
         }
         this.collider.cells = newCells;
     }
+    calculatePoseCollision(pivotReferencePoints)
+    {
+        const poseCollision = { lowest: Infinity, highest: -Infinity };
+        for(const prp of pivotReferencePoints)
+        {
+            const z = prp.object.getWorldPosition(new THREE.Vector3()).z - this.getPos().z;
+            if(z + prp.radius > poseCollision.highest)
+                poseCollision.highest = z + prp.radius;
+            if(z - prp.radius < poseCollision.lowest)
+                poseCollision.lowest = z - prp.radius;
+        }
+        return poseCollision;
+    }
+    setColliderFromPoseCollision(poseCollision)
+    {
+        const pc = poseCollision;
+        this.setColliderHeight(Math.max(0.25, Math.min(2.16, pc.highest - pc.lowest))); //clamp height so cheaters cant make ridiculous bounding boxes
+        this.setColliderPos(new THREE.Vector3(0, 0, pc.lowest + this.collider.height / 2));
+
+        if(this.collider.debugDrawMesh)
+            this.setDebugDraw(true);
+    }
     setDebugDraw(debugDraw)
     {
         if(!debugDraw)
@@ -771,7 +789,7 @@ export class collisionGameObject extends gameObject
         else
         {
             if(this.collider.debugDrawMesh)
-                this.mesh.remove(this.collider.debugDrawMesh);
+                this.setDebugDraw(false);
             this.collider.debugDrawMesh = new THREE.Mesh(
                 new THREE.CylinderGeometry(this.collider.radius, this.collider.radius, this.collider.height, 32), 
                 new THREE.MeshStandardMaterial({color:"red", transparent:true, opacity:0.5}));
@@ -789,15 +807,16 @@ export class collisionGameObject extends gameObject
             return;
 
         //see if we should check for collisions
-        const rotationalSymmetry = this.collider.pos.x == 0 && this.collider.pos.y == 0;
         let checkFromYaw = false;
-        if(rotationalSymmetry)
-            this.prevYaw = null;
-        else
-            checkFromYaw = this.mesh.rotation.z != this.prevYaw;
-        if(checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
+        if(!this.collider.colliderChanged)
+        {
+            if(this.collider.pos.x != 0 || this.collider.pos.y != 0)
+                checkFromYaw = this.mesh.rotation.z != this.prevYaw;
+        }
+        if(this.collider.colliderChanged || checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
         {
             this.grounded = false;
+            this.collider.colliderChanged = false;
 
             //check for collisions from static colliders that share a cell with us
             const collisions = this.checkForCollisionsInCells();
@@ -1171,7 +1190,7 @@ export class player extends collisionGameObject
 {
     speed = 3;
     climbSpeed = 1;
-    defaultHeight = 1.7;
+    defaultHeight = 1.75;
     radius = 0.3;
     touchMove = {
         stickRadius: 50,
@@ -1270,7 +1289,9 @@ export class player extends collisionGameObject
                 piv.restQuat = piv.quaternion.clone();
             }
 
-            addPivotReferencePoints(this.pivots);
+            this.pivotReferencePoints = addPivotReferencePoints(this.pivots);
+            this.poseCollision = this.calculatePoseCollision(this.pivotReferencePoints);
+            this.setColliderFromPoseCollision(this.poseCollision);
         });
 
         this.id = args.id ?? 0;
@@ -1395,10 +1416,7 @@ export class player extends collisionGameObject
             this.climbCollider = new collisionGameObject(this.handler);
 
             //lock mouse when page is clicked, but only if menu is not open
-            this.ui.canvas.addEventListener("click", (event) => {
-                this.setOpenMenu(false);
-                this.ui.canvas.requestPointerLock();
-            });
+            this.ui.canvas.addEventListener("click", (event) => { this.setOpenMenu(false); });
 
             //event received from index.html when pose menu arrow buttons are pressed
             document.addEventListener("pivotTurn", (event) => {
@@ -1617,13 +1635,14 @@ export class player extends collisionGameObject
         }
 
         //gravity
-        if(!this.grounded && this.pos.z > this.groundLevel)
+        const effz = this.pos.z + this.collider.pos.z - this.collider.height / 2;
+        if(!this.grounded && effz != this.groundLevel)
         {
             this.gravity = Math.min(MAX_METERS_DELTA * (1 / 60 / this.handler.multiplayer.sendInterval), this.gravity + dt);
-            const newZ = Math.max(this.groundLevel, this.pos.z - this.gravity);
-            this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newZ));
+            const newEffz = Math.max(this.groundLevel, effz - this.gravity);
+            this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, newEffz - this.collider.pos.z + this.collider.height / 2));
 
-            if(this.pos.z <= this.groundLevel)
+            if(newEffz <= this.groundLevel)
             {
                 this.grounded = true;
                 this.gravity = 0;
@@ -1741,10 +1760,23 @@ export class player extends collisionGameObject
     {
         this.pose[pivotName] = { dir: dir, roll: roll };
         const pivot = this.pivots[pivotName];
-        pivot.t = 0;
-        pivot.target = quat != null ? quat : getNewPivotQuat(dir, roll, pivot.quaternion);
+
+        const targetQuat = quat != null ? quat : getNewPivotQuat(dir, roll, pivot.quaternion);
+        const origQuat = pivot.quaternion.clone();
+        pivot.quaternion.copy(targetQuat);
         
-        //TODO: set collider based on newly updated pose collision, AND handle case where playerMesh == null still (probably just do nothing)
+        if(playerMesh != null)
+        {
+            const prevLowest = this.poseCollision.lowest;
+            const prevHighest = this.poseCollision.highest;
+            this.poseCollision = this.calculatePoseCollision(this.pivotReferencePoints);
+            if(prevLowest != this.poseCollision.lowest || prevHighest != this.poseCollision.highest)
+                this.setColliderFromPoseCollision(this.poseCollision);
+        }
+
+        pivot.quaternion.copy(origQuat);
+        pivot.target = targetQuat;
+        pivot.t = 0;
     }
     setColor(color)
     {
@@ -1754,7 +1786,11 @@ export class player extends collisionGameObject
     setOpenMenu(open)
     {
         if(this.openMenu == open)
+        {
+            if(!open && !document.pointerLockElement)
+                this.ui.canvas.requestPointerLock();
             return;
+        }
         this.openMenu = open;
         const menuBox = document.getElementById("menuBox");
         if(this.openMenu)
@@ -1766,7 +1802,10 @@ export class player extends collisionGameObject
             menuBox.classList.remove("hidden");
         }
         else
+        {
+            this.ui.canvas.requestPointerLock();
             menuBox.classList.add("hidden");
+        }
     }
     onCollision(correction)
     {
@@ -1777,6 +1816,22 @@ export class player extends collisionGameObject
         }
     }
     onRemove() { this.handler.scene.remove(this.playerMesh); }
+    setDebugDraw(debugDraw)
+    {
+        super.setDebugDraw(debugDraw);
+        for(const rp of this.pivotReferencePoints)
+        {
+            if(debugDraw)
+            {
+                rp.debugDrawMesh = new THREE.Mesh(
+                    new THREE.IcosahedronGeometry(rp.radius * 10,3), 
+                    new THREE.MeshStandardMaterial({color:"green", transparent:true, opacity:0.5, depthTest:false, depthWrite:false}));
+                rp.object.add(rp.debugDrawMesh);
+            }
+            else
+                rp.object.remove(rp.debugDrawMesh);
+        }
+    }
 }
 
 export class placedDoll extends collisionGameObject
@@ -1820,14 +1875,24 @@ export class placedDoll extends collisionGameObject
                 if(obj.isSkinnedMesh)
                     skel = obj.skeleton;
             });
-            skel.getBoneByName("Hip_Bone_00").quaternion.copy(getNewPivotQuat(pose.body.dir, pose.body.roll));
-            skel.getBoneByName("Head_Bone_02").quaternion.copy(getNewPivotQuat(pose.head.dir));
-            skel.getBoneByName("Arm_Upper_Bone_L_06").quaternion.copy(getNewPivotQuat(pose.leftArm.dir));
-            skel.getBoneByName("Arm_Upper_Bone_R_03").quaternion.copy(getNewPivotQuat(pose.rightArm.dir));
-            skel.getBoneByName("Leg_Upper_Bone_L_09").quaternion.copy(getNewPivotQuat(pose.leftLeg.dir));
-            skel.getBoneByName("Leg_Upper_Bone_R_012").quaternion.copy(getNewPivotQuat(pose.rightLeg.dir));
+            const pivots = {};
+            pivots.body = skel.getBoneByName("Hip_Bone_00");
+            pivots.head = skel.getBoneByName("Head_Bone_02");
+            pivots.leftArm = skel.getBoneByName("Arm_Upper_Bone_L_06");
+            pivots.rightArm = skel.getBoneByName("Arm_Upper_Bone_R_03");
+            pivots.leftLeg = skel.getBoneByName("Leg_Upper_Bone_L_09");
+            pivots.rightLeg = skel.getBoneByName("Leg_Upper_Bone_R_012");
 
-            this.setCollider(this.activePlayer.radius, this.activePlayer.defaultHeight, new THREE.Vector3(), true, false);
+            const referencePoints = addPivotReferencePoints(pivots);
+            for(const [id, piv] of Object.entries(pivots))
+            {
+                const p = pose[id];
+                piv.quaternion.copy(getNewPivotQuat(p.dir, p.roll));
+            }
+            const poseCollision = this.calculatePoseCollision(referencePoints);
+            this.setColliderRadius(this.activePlayer.radius);
+            this.setColliderStatic(true);
+            this.setColliderFromPoseCollision(poseCollision);
         });
     }
     tick(dt, time)

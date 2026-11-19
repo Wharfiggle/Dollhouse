@@ -193,6 +193,7 @@
             rowBut.onpointerdown = (event) => { requestPivotTurn(event); };
             rowBut.onpointerup = (event) => stopPivotTurn(event);
             rowBut.onpointercancel = (event) => stopPivotTurn(event);
+            rowBut.onpointerleave = (event) => stopPivotTurn(event);
         }
 
         function requestPivotTurn(event)
