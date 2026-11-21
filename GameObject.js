@@ -595,12 +595,22 @@ export class collision
     }
     addCollider(gameObj)
     {
-        if(gameObj.collider.static)
-            this.statics.push(gameObj);
-        else
-            this.nonStatics.push(gameObj);
+        const arr = gameObj.collider.static ? this.statics : this.nonStatics;
+        arr.push(gameObj);
 
-        gameObj.updateCellsAndWorldPos();
+        if(gameObj.collider.static)
+        {
+            for(const cellKey of gameObj.collider.cells)
+            {
+                const entry = this.staticCells.get(cellKey);
+                if(!entry)
+                {
+                    this.staticCells.set(cellKey, [gameObj]);
+                    continue;
+                }
+                entry.push(gameObj);
+            }
+        }
 
         gameObj.setDebugDraw(this.debugDraw);
     }
@@ -608,6 +618,7 @@ export class collision
     {
         const arr = gameObj.collider.static ? this.statics : this.nonStatics;
         arr.splice(arr.indexOf(gameObj), 1);
+        
         if(gameObj.collider.static)
         {
             for(const cellKey of gameObj.collider.cells)
@@ -616,7 +627,8 @@ export class collision
                 cell.splice(cell.indexOf(gameObj), 1);
             }
         }
-        gameObj.collider.cells = [];
+
+        gameObj.setDebugDraw(false);
     }
     setDebugDraw(debugDraw)
     {
@@ -645,12 +657,14 @@ export class collisionGameObject extends gameObject
         static: false,
         active: false,
         worldPos : new THREE.Vector3(),
+        top: 0,
+        bottom: 0,
         cells: [],
         debugDrawMesh: null
     }
     prevPos = new THREE.Vector3();
     prevYaw =  null;
-    colliderChanged = false;
+    changed = false;
     groundLevel = 0;
     constructor(h = null, mesh = null, isLocal = true)
     {
@@ -670,17 +684,17 @@ export class collisionGameObject extends gameObject
     setColliderRadius(radius)
     {
         this.collider.radius = radius;
-        this.collider.colliderChanged = true;
+        this.collider.changed = true;
     }
     setColliderHeight(height)
     {
         this.collider.height = height;
-        this.collider.colliderChanged = true;
+        this.collider.changed = true;
     }
     setColliderPos(pos)
     {
         this.collider.pos.copy(pos);
-        this.collider.colliderChanged = true;
+        this.collider.changed = true;
     }
     setColliderStatic(isStatic)
     {
@@ -707,7 +721,7 @@ export class collisionGameObject extends gameObject
         else
             this.handler.collision.removeCollider(this);
     }
-    updateCellsAndWorldPos()
+    updateColliderInfo()
     {
         //update worldPos
         const pos = this.getPos();
@@ -719,12 +733,11 @@ export class collisionGameObject extends gameObject
             pos.z + colPos.z);
         this.collider.worldPos.copy(result);
         
-        //dont update cells if not active
-        if(!this.collider.active)
-            return;
+        //update derrived variables
+        this.collider.top = this.collider.worldPos.z + this.collider.height / 2; 
+        this.collider.bottom = this.collider.worldPos.z - this.collider.height / 2;
 
         //update cells
-
         const cellSize = this.handler.collision.cellSize;
         const newCells = [];
         const minCellX = Math.floor((result.x - this.collider.radius) / cellSize);
@@ -744,21 +757,25 @@ export class collisionGameObject extends gameObject
             }
         }
 
-        //populate self in appropriate slots in handler.collision.staticCells map
-        if(this.collider.static)
+        //populate self in appropriate slots in handler.collision.staticCells map (only if static and active)
+        if(this.collider.static && this.collider.active)
         {
+            //remove self from old cells
             for(const oldCell of this.collider.cells)
             {
-                if(newCells.includes(oldCell))
+                const newCellInd = newCells.indexOf(oldCell);
+                if(newCellInd != -1)
+                {
+                    newCells.splice(newCellInd, 1);
                     continue;
+                }
                 const entry = this.handler.collision.staticCells.get(oldCell);
                 entry.splice(entry.indexOf(this), 1);
             }
+            //add self to new cells
             for(const newCell of newCells)
             {
-                if(this.collider.cells.includes(newCell))
-                    continue;
-                let entry = this.handler.collision.staticCells.get(newCell);
+                const entry = this.handler.collision.staticCells.get(newCell);
                 if(!entry)
                 {
                     this.handler.collision.staticCells.set(newCell, [this]);
@@ -842,50 +859,40 @@ export class collisionGameObject extends gameObject
                 this.collider.debugDrawMesh.rotateX(Math.PI / 2);
             this.collider.debugDrawMesh.position.copy(this.collider.pos);
             this.collider.debugDrawCells = [];
-            this.updateCellsAndWorldPos();
+            this.collider.changed = true;
         }
     }
     tick(dt, time)
     {
         super.tick(dt, time);
 
-        const colliderChange = this.collider.colliderChanged;
-        this.collider.colliderChanged = false;
-
-        //static colliders dont regularly update cells and worldpos so make sure they update if their collider changes
-        if(colliderChange && this.collider.static)
-            this.updateCellsAndWorldPos();
-
-        if(!this.collider.active || this.collider.static)
-            return;
+        const colliderChange = this.collider.changed;
+        this.collider.changed = false;
 
         //see if we should check for collisions
         let checkFromYaw = false;
         if(!colliderChange)
         {
+            //need to check from yaw if object yaw changes while collider does not have radial symmetry
             if(this.collider.pos.x != 0 || this.collider.pos.y != 0)
                 checkFromYaw = this.mesh.rotation.z != this.prevYaw;
         }
-        if(colliderChange || checkFromYaw || this.getPos().sub(this.prevPos).length() > 0)
+        if(colliderChange || checkFromYaw || (!this.collider.static && this.getPos().sub(this.prevPos).length() > 0))
         {
-            this.grounded = false;
+            this.updateColliderInfo();
+
+            if(this.collider.static || !this.collider.active)
+                return;
 
             //check for collisions from static colliders that share a cell with us
             const collisions = this.checkForCollisionsInCells();
-            for(const c of collisions)
-            {
-                this.resolveCollision(c);
-            }
+            this.resolveCollisions(collisions);
             this.prevPos.copy(this.getPos());
             this.prevYaw = this.mesh.rotation.z;
         }
     }
     checkForCollisionsInCells()
     {
-        if(!this.collider.active)
-            return console.warning("checkForCollisionsInCells called while collider was not active! this.collider.cells is not populated while colliders are not active, so this will do nothing.");
-
-        this.updateCellsAndWorldPos();
         const collisions = [];
         const checked = [];
         for(const cellKey of this.collider.cells)
@@ -910,45 +917,89 @@ export class collisionGameObject extends gameObject
     }
     checkForCollision(gameObj)
     {
-        //see if heights intersect
-        const myPos = this.collider.worldPos;
-        const myHalfHeight = this.collider.height / 2;
-        const myBottom = myPos.z - myHalfHeight;
-        const myTop = myPos.z + myHalfHeight;
-        const yourPos = gameObj.collider.worldPos;
-        const yourHalfHeight = gameObj.collider.height / 2;
-        const yourBottom = yourPos.z - yourHalfHeight;
-        const yourTop = yourPos.z + yourHalfHeight;
+        const me = this.collider;
+        const you = gameObj.collider;
 
-        const verticalOverlap = myPos.z < yourPos.z ? myTop - yourBottom : yourTop - myBottom;
+        //see if heights intersect
+        const verticalOverlap = me.worldPos.z < you.worldPos.z ? me.top - you.bottom : you.top - me.bottom;
         if(verticalOverlap <= 0)
             return false; //heights do not intersect
 
         //see if radii intersect
-        const minDist = this.collider.radius + gameObj.collider.radius;
-        const horizontalOverlap = minDist - new THREE.Vector2(myPos.x, myPos.y).sub(new THREE.Vector2(yourPos.x, yourPos.y)).length();
+        const minDist = me.radius + you.radius;
+        const horizontalOverlap = minDist - new THREE.Vector2(me.worldPos.x, me.worldPos.y).sub(new THREE.Vector2(you.worldPos.x, you.worldPos.y)).length();
         if(horizontalOverlap > 0)
-            return { horizontalOverlap: horizontalOverlap, verticalOverlap: verticalOverlap, myPos: myPos, yourPos: yourPos, myBottom: myBottom };
+            return { horizontalOverlap: horizontalOverlap, verticalOverlap: verticalOverlap, gameObj: gameObj };
         else
             return false;
     }
-    resolveCollision(args)
+    getCollisionCorrection(args)
     {
         if(!args)
-            return;
+            return false;
+
+        const me = this.collider;
+        const you = args.gameObj.collider;
 
         //resolve collision through either vertical or horizontal overlap
         const useVertical = args.useHorizontal ? false : args.verticalOverlap < args.horizontalOverlap;
-        const diff = useVertical ? new THREE.Vector3(0, 0, args.myPos.z - args.yourPos.z) : new THREE.Vector3(args.myPos.x - args.yourPos.x, args.myPos.y - args.yourPos.y, 0);
+        const diff = useVertical ? 
+            new THREE.Vector3(0, 0, me.worldPos.z - you.worldPos.z) : 
+            new THREE.Vector3(me.worldPos.x - you.worldPos.x, me.worldPos.y - you.worldPos.y, 0);
         const dir = diff.clone().normalize();
 
         //assume gameObj is static and we are not
         const correction = dir.clone().multiplyScalar(useVertical ? args.verticalOverlap : args.horizontalOverlap);
         
         //if correction would ever put us below ground level, dont do it and instead use horizontal displacement
-        if(useVertical && correction.z + args.myBottom < this.groundLevel)
+        if(useVertical && correction.z + me.bottom < this.groundLevel)
             return this.resolveCollision({ ...args, useHorizontal: true });
         
+        return correction;
+    }
+    resolveCollisions(collisions)
+    {
+        if(!collisions)
+            return;
+        if(!Array.isArray(collisions))
+            collisions = [collisions];
+        else if(collisions.length == 0)
+            return;
+
+        //add all corrections in a sum
+        const correction = new THREE.Vector3();
+        let numVerts = 0;
+        let numHors = 0;
+        for(const c of collisions)
+        {
+            const corr = this.getCollisionCorrection(c);
+            if(!corr)
+                continue;
+            if(corr.z != 0)
+            {
+                numVerts++;
+                correction.z += corr.z;
+            }
+            else
+            {
+                numHors++;
+                correction.x += corr.x;
+                correction.y += corr.y;
+            }
+        }
+
+        //average out all horizontal and vertical corrections
+        if(collisions.length > 1)
+        {
+            if(numHors > 0)
+            {
+                correction.x /= numHors;
+                correction.y /= numHors;
+            }
+            if(numVerts > 0)
+                correction.z /= numVerts;
+        }
+
         this.addPos(correction);
         this.onCollision(correction);
     }
@@ -1680,7 +1731,8 @@ export class player extends collisionGameObject
             this.climbCollider.setPos(pos);
             this.climbCollider.mesh.rotation.z = this.mesh.rotation.z;
             const bottomPos = new THREE.Vector3(this.collider.pos.x, this.collider.pos.y, this.collider.pos.z - this.collider.height / 2);
-            this.climbCollider.setCollider(this.collider.radius + 0.25, this.collider.height, bottomPos, false, false);
+            this.climbCollider.setCollider(this.collider.radius + 0.25, this.collider.height + 0.2, bottomPos, false, false);
+            this.climbCollider.updateColliderInfo();
             if(this.insidePlacedDoll || this.climbCollider.checkForCollisionsInCells().length > 0)
             {
                 this.grounded = true;
@@ -1864,6 +1916,7 @@ export class player extends collisionGameObject
     }
     onCollision(correction)
     {
+        super.onCollision(correction);
         if(correction.z > 0)
         {
             this.grounded = true;
@@ -1871,6 +1924,11 @@ export class player extends collisionGameObject
         }
     }
     onRemove() { this.handler.scene.remove(this.playerMesh); }
+    updateColliderInfo()
+    {
+        super.updateColliderInfo();
+        this.grounded = false;
+    }
     setDebugDraw(debugDraw)
     {
         super.setDebugDraw(debugDraw);
