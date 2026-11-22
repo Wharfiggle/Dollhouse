@@ -46,7 +46,8 @@ export class mannequin extends collisionGameObject
     constructor(h, mesh, isLocal, material = null)
     {
         super(h, mesh, isLocal);
-        this.material = material == null ? h.materials.player : material;
+        material ??= h.materials.player;
+        this.material = material.clone();
 
         this.setColliderRadius(0.3);
         this.setColliderHeight(1.75);
@@ -64,7 +65,6 @@ export class mannequin extends collisionGameObject
         this.mannequinMesh.traverse((obj) => {
             if(obj.isMesh)
             {
-                this.material = this.material.clone();
                 obj.material = this.material;
                 this.setColor(this.color);
             }
@@ -104,10 +104,7 @@ export class mannequin extends collisionGameObject
             {
                 piv.restDir = p.dir;
                 if(p.roll != null)
-                {
-                    console.log("hhhhh");
                     piv.restRoll = p.roll;
-                }
             }
         }
         this.poseCollision = this.calculatePoseCollision(this.pivotReferencePoints);
@@ -345,8 +342,6 @@ export class player extends mannequin
         
         this.mesh.remove(this.mannequinMesh);
         this.handler.scene.add(this.mannequinMesh);
-        this.mannequinMesh.rotateZ(this.meshYaw);
-        this.mannequinMesh.position.copy(this.getPos());
     }
     send(action, full, all)
     {
@@ -417,7 +412,7 @@ export class player extends mannequin
                 const snappedRoll = snappedRollInd * (Math.PI / 4);
                 quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
                 
-                this.setPivotDirection(d.pivot, dirInd, d.pivot == "body" ? snappedRollInd : null, quat);
+                this.setPivotDirection(d.pivot, dirInd, d.pivot == "body" ? snappedRollInd : null); //, quat)
             });
 
             //todo fix this not changing collider
@@ -425,7 +420,7 @@ export class player extends mannequin
             document.addEventListener("pivotReset", (event) => {
                 for(const [id, piv] of Object.entries(this.pivots))
                 {
-                    this.setPivotDirection(id, -1, -1, piv.quaternion);
+                    this.setPivotDirection(id, piv.restDir, piv.restRoll);
                 }
             });
 
@@ -711,20 +706,12 @@ export class player extends mannequin
         this.meshYaw = yaw;
         this.mannequinMesh.rotation.z = yaw;
     }
-    setPivotDirection(pivotName, dir = -1, roll = null, quat = null)
+    setPivotDirection(pivotName, dir, roll = null, quat = null)
     {
-        const pivot = this.pivots[pivotName];
-        if(dir < 0 || dir >= POSE_DIRECTIONS.length)
-            dir = pivot.restDir;
-        if(roll != null && roll < 0 && pivot.restRoll != null)
-        {
-            console.log("fadjhfadjhafjnh");
-            roll = pivot.restRoll;
-        }
-
         this.pose[pivotName] = { dir: dir };
         if(roll != null)
             this.pose[pivotName].roll = roll;
+        const pivot = this.pivots[pivotName];
 
         const targetQuat = quat != null ? quat : this.getNewPivotQuat(dir, roll, pivot.quaternion);
         const origQuat = pivot.quaternion.clone();
