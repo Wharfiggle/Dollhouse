@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import * as GameObject from "./GameObject.js";
+import * as Handlers from "./Handlers.js";
+import * as Dollhouse from "./Dollhouse.js";
 import { getMaterials } from "./Shaders.js";
 
 const UI_SCALE_HEIGHT = 1000;
@@ -62,21 +64,21 @@ function loadGame()
 
 
     //handlers and managers
-    const input = new GameObject.input(w, h, canvas);
-    const multiplayer = new GameObject.multiplayer();
-    const collision = new GameObject.collision();
-    const handler = new GameObject.handler(scene, camera, ui, ghostUi, materials, input, multiplayer, collision);
+    const input = new Handlers.input(w, h, canvas);
+    const multiplayer = new Handlers.multiplayer();
+    const collision = new Handlers.collision();
+    const handler = new Handlers.handler(scene, camera, ui, ghostUi, materials, input, multiplayer, collision);
 
     
     handleWindowResize();
 
 
     //game objects
-    handler.newGameObject(GameObject.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
+    handler.newGameObject(Dollhouse.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
     multiplayer.setControlledPlayer(0);
     handler.newGameObject(GameObject.basicCollider, { height: 2, radius: 1, bottomPos: new THREE.Vector3(0, 4, 0) });
     
-    handler.newGameObject(GameObject.ground);
+    handler.newGameObject(Dollhouse.ground);
 
 
     //tick
