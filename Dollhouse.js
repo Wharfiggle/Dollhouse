@@ -86,29 +86,35 @@ export class mannequin extends collisionGameObject
 
         this.pivotReferencePoints = this.addPivotReferencePoints();
         if(this.pose != null)
-            this.applyPoseToPivots(true);
+            this.applyPoseToPivots();
     }
-    setPose(pose)
+    setPose(pose, lerp = false)
     {
-        this.pose = pose;
+        this.pose = { ...pose };
         if(this.mannequinMesh)
-            this.applyPoseToPivots(true);
+            this.applyPoseToPivots(lerp);
     }
-    applyPoseToPivots(restPose = false)
+    applyPoseToPivots(lerp = false)
     {
+        const origQuats = [];
         for(const [id, piv] of Object.entries(this.pivots))
         {
             const p = this.pose[id];
+            origQuats.push(piv.quaternion.clone());
             piv.quaternion.copy(this.getNewPivotQuat(p.dir, p.roll));
-            if(restPose)
-            {
-                piv.restDir = p.dir;
-                if(p.roll != null)
-                    piv.restRoll = p.roll;
-            }
         }
         this.poseCollision = this.calculatePoseCollision(this.pivotReferencePoints);
         this.setColliderFromPoseCollision(this.poseCollision);
+
+        if(lerp)
+        {
+            for(const [index, [id, piv]] of Object.entries(this.pivots).entries())
+            {
+                piv.target = piv.quaternion.clone();
+                piv.quaternion.copy(origQuats[index]);
+                piv.t = 0;
+            }
+        }
     }
     //calculates pose collision information from reference points
     calculatePoseCollision(pivotReferencePoints)
@@ -223,11 +229,14 @@ export class player extends mannequin
         leftLeg: { dir:poseDirectionDown },
         rightLeg: { dir:poseDirectionDown }
     };
+    restPose = {};
     lockYawToCamera = false;
 
     constructor(args)
     {
         super(args.handler, new THREE.Object3D(), Object.hasOwn(args, "isLocal") ? args.isLocal : true, args.handler.materials.player);
+
+        this.restPose = { ...this.pose };
 
         this.touchMove.outerRadius = this.touchMove.stickRadius + this.touchMove.maxDist;
 
@@ -418,10 +427,7 @@ export class player extends mannequin
             //todo fix this not changing collider
             //event received from index.html when reset button is pressed
             document.addEventListener("pivotReset", (event) => {
-                for(const [id, piv] of Object.entries(this.pivots))
-                {
-                    this.setPivotDirection(id, piv.restDir, piv.restRoll);
-                }
+                this.setPose(this.restPose, true);
             });
 
             //event received from index.html when color is changed
