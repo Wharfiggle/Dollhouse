@@ -144,11 +144,12 @@ export class mannequin extends collisionGameObject
 
         const quat = new THREE.Quaternion();
         const forward = new THREE.Vector3(0, 1, 0);
-        if(referenceQuat != null)
+        if(referenceQuat != null && roll == null)
         {
             quat.copy(referenceQuat);
             forward.applyQuaternion(referenceQuat);
         }
+
         quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, POSE_DIRECTIONS[dir]));
         if(roll != null)
             quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), roll * Math.PI / 4));
@@ -385,10 +386,10 @@ export class player extends mannequin
                 //on limbs, rotate axis to cancel out body's rotations so that rotation direction is still consistent
                 if(d.pivot != "body")
                     axis.applyQuaternion(this.pivots.body.quaternion.clone().invert());
-                const quat = pivot.quaternion.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(axis, mod * Math.PI / 4));
+                const relativeQuat = pivot.quaternion.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(axis, mod * Math.PI / 4));
 
                 //get closest direction in 26 voxel neighborhood and snap to it
-                const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+                const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(relativeQuat);
                 let bestDot = 0;
                 let dirInd = 0;
                 for(const [i, dir] of POSE_DIRECTIONS.entries())
@@ -401,18 +402,17 @@ export class player extends mannequin
                     }
                 }
                 const direction = POSE_DIRECTIONS[dirInd];
-                quat.premultiply(new THREE.Quaternion().setFromUnitVectors(forward, direction));
-
-                //snap roll to 45 degree increments
-                const projected = quat.x * direction.x + quat.y * direction.y + quat.z * direction.z;
-                let roll = 2 * Math.atan2(projected, quat.w);
-                //make sure roll is within range of 0 - 2PI
-                roll = ((roll % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
-                const snappedRollInd = Math.round(roll / (Math.PI / 4));
-                const snappedRoll = snappedRollInd * (Math.PI / 4);
-                quat.premultiply(new THREE.Quaternion().setFromAxisAngle(direction, snappedRoll - roll));
+                const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
                 
-                this.setPivotDirection(d.pivot, dirInd, d.pivot == "body" ? snappedRollInd : null); //, quat)
+                //isolate roll and snap to 45 degree increments
+                const rollQuat = quat.clone().invert().multiply(relativeQuat).normalize();
+                let roll = 2 * Math.atan2(rollQuat.y, rollQuat.w);
+                roll = ((roll % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+                const snappedRollInd = Math.round(roll / (Math.PI / 4)) % 8;
+                const snappedRoll = snappedRollInd * (Math.PI / 4);
+                quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), snappedRoll));
+                
+                this.setPivotDirection(d.pivot, dirInd, d.pivot == "body" ? snappedRollInd : null, quat);
             });
 
             //todo fix this not changing collider
