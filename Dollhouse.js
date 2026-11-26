@@ -5,6 +5,7 @@ import { collisionGameObject, gameObject,
 
 
 export const PLACE_TIME = 2;
+export const DISABLE_LERP_DIST = 25;
 
 const POSE_DIRECTIONS = [];
 let poseDirectionUp;
@@ -112,7 +113,6 @@ export class mannequin extends collisionGameObject
             {
                 piv.target = piv.quaternion.clone();
                 piv.quaternion.copy(origQuats[index]);
-                piv.t = 0;
             }
         }
     }
@@ -231,6 +231,7 @@ export class player extends mannequin
     };
     restPose = {};
     lockYawToCamera = false;
+    disableLerp = false;
 
     constructor(args)
     {
@@ -256,6 +257,8 @@ export class player extends mannequin
             () => [this.pos.x, this.pos.y], 
             (toFormat) => new THREE.Vector2().fromArray(toFormat),
             (data, t) => {
+                if(this.disableLerp)
+                    t = 1;
                 const xy = lerpVec(data.start, data.target, t);
                 this.setPos(new THREE.Vector3(xy.x, xy.y, this.pos.z));
                 return t >= 1;
@@ -264,6 +267,8 @@ export class player extends mannequin
             () => [this.getPos().z], 
             (toFormat) => toFormat[0],
             (data, t) => {
+                if(this.disableLerp)
+                    t = 1;
                 this.setPos(new THREE.Vector3(this.pos.x, this.pos.y, lerp(data.start, data.target, t)));
                 return t >= 1;
             });
@@ -517,18 +522,20 @@ export class player extends mannequin
     }
     tick(dt, time)
     {
+        this.disableLerp = this.getPos().sub(this.handler.camera.getWorldPosition(new THREE.Vector3())).length() >= DISABLE_LERP_DIST;
+
         //slerp pivots towards target rotation 
         for(const [id, piv] of Object.entries(this.pivots))
         {
             if(piv.target)
             {
                 piv.t ??= 0;
-                piv.t = Math.min(1, piv.t + dt * 2);
+                piv.t = this.disableLerp ? 1 : Math.min(1, piv.t + dt * 2);
                 piv.quaternion.slerp(piv.target, Math.sqrt(piv.t));
                 if(piv.t >= 1)
                 {
                     piv.target = null;
-                    piv.t = 0;
+                    piv.t = null;
                 }
             }
         }
@@ -651,8 +658,7 @@ export class player extends mannequin
         const cameraGround = this.groundLevel + 0.05;
         if(cameraWorldPos.z < cameraGround)
         {
-            const orbitWorldPos = new THREE.Vector3();
-            this.cameraOrbit.getWorldPosition(orbitWorldPos);
+            const orbitWorldPos = this.cameraOrbit.getWorldPosition(new THREE.Vector3());
             const direction = cameraWorldPos.clone().sub(orbitWorldPos);
             const lengthMod = (cameraGround - orbitWorldPos.z) / direction.z;
             const targetWorldPos = orbitWorldPos.clone().add(direction.clone().multiplyScalar(lengthMod));
@@ -697,7 +703,7 @@ export class player extends mannequin
         if(this.mannequinMesh)
         {
             const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.meshTargetYaw, "XYZ"));
-            if(this.mannequinMesh.quaternion.angleTo(targetQuat) < 0.05)
+            if(this.disableLerp || this.mannequinMesh.quaternion.angleTo(targetQuat) < 0.05)
                 this.mannequinMesh.quaternion.copy(targetQuat);
             else
                 this.mannequinMesh.quaternion.slerp(targetQuat, 10 * dt);
@@ -738,10 +744,12 @@ export class player extends mannequin
     }
     setOpenMenu(open)
     {
+        if(!this.mannequinMesh)
+            return;
         if(this.openMenu == open)
         {
-            if(!open && !document.pointerLockElement)
-                this.ui.canvas.requestPointerLock();
+            if(!open)
+                this.handler.lockPointer();
             return;
         }
         this.openMenu = open;
@@ -750,13 +758,15 @@ export class player extends mannequin
         {
             const cmt = this.cameraMenuTransition;
             cmt.targetOrbitQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI * 0.25, 0, 0, "XYZ"));
-            cmt.targetMeshQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, this.mesh.rotation.z + Math.PI * 0.85, "XYZ"));
-            document.exitPointerLock();
+            this.handler.camera.position.set(-this.handler.camera.aspect * cmt.offset, 0, 0);
+            const dir = this.handler.camera.getWorldPosition(new THREE.Vector3()).sub(this.getPos());
+            cmt.targetMeshQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.atan2(dir.y, dir.x) - Math.PI / 2, "XYZ"));
+            this.handler.unlockPointer();
             menuBox.classList.remove("hidden");
         }
         else
         {
-            this.ui.canvas.requestPointerLock();
+            this.handler.lockPointer();
             menuBox.classList.add("hidden");
         }
     }

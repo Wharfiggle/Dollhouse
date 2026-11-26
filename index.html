@@ -18,12 +18,16 @@
             
             #overlay { pointer-events:none; display:flex; flex:1; position:fixed; inset:0; width:auto; height:auto; flex-direction:column; justify-content:end; }
             #menuHolder { display:flex; flex:1; width:65dvw; height:auto; justify-content:center; align-items:center; padding-top:1dvh; padding-bottom:1dvh; padding-left:1dvw; padding-right:1dvw }
-            #menuBox { container-type:size; overflow:hidden; pointer-events:auto; display:flex; width:calc(var(--boxSize) * 4 / 3); height:var(--boxSize); padding-top:2dvh; padding-bottom:2dvh; padding-left:2dvh;
-                background-color:rgba(100,100,100,0.8); border:solid 1dvh black; border-radius:5dvh; transform:scale(100%); transition:transform 0.2s ease-out }
+            #menuBox { pointer-events:none; container-type:size; display:flex; width:calc(var(--boxSize) * 4 / 3); height:var(--boxSize);
+                background-color:rgb(200,200,200,0.0); transform:scale(100%); transition:transform 0.2s ease-out }
             #menuBox.hidden { transform:scale(0%); }
 
-            #pivotSelect { position:relative; }
-            #dollImg { height:100%; }
+            #pivotSelect { pointer-events:auto; position:relative; }
+            #dollContainer { width:fit-content; height:100%; cursor:pointer; transform:scale(100%); transition:transform 0.5s ease }
+            #dollContainer:active { transform:scale(95%) }
+            .dollImg { width:100%; height:100%; }
+            #dollBack { position:absolute; z-index:-1; left:0; top:0; background-color:#FF00FF; mask-image:url("assets/PegManMask.png"); mask-size:contain; mask-repeat:no-repeat; mask-position:center; 
+                -webkit-mask-image:url("assets/PegManMask.png"); -webkit-mask-size:contain; -webkit-mask-repeat:no-repeat; -webkit-mask-position:center; }
             #pivotSelect input { appearance:none; margin:0; position:absolute; cursor:pointer; width:15cqh; height:15cqh; 
                 border-radius:100%; background-color:white; border:solid 1.5cqh black; -webkit-tap-highlight-color:transparent;
                 background-repeat:no-repeat; background-position:center; background-image:radial-gradient(black 25%, white 27%);
@@ -38,8 +42,8 @@
             #body { left:50%; top:33%; }
             
             #rightHolder { container-type:size; position:relative; display:flex; flex:1; justify-content:center; align-items:center; flex-direction:column; }
-            #arrowBackground { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:95cqw; height:95cqw; background-color:rgba(0,0,0,0.5); border:solid 2cqw black; border-radius:100% }
-            #arrowHolder { container-type:size; position:relative; width:73cqw; height:73cqw; }
+            #arrowBackground { pointer-events:auto; position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:95cqw; height:95cqw; background-color:rgba(0,0,0,0.65); border-radius:100% }
+            #arrowHolder { pointer-events:auto; container-type:size; position:relative; width:73cqw; height:73cqw; }
 
             .arrowButton { position:absolute; cursor:pointer; top:50%; left:50%; width:40cqh; height:40cqh; padding:3cqh; -webkit-tap-highlight-color:transparent;
                 --scale:1; --scalex:1; transform:translate(-50%, -50%) rotate(var(--rotation)) scale(calc(var(--scale) * var(--scalex)), var(--scale)); transition:padding 0.05s ease }
@@ -53,7 +57,7 @@
             #ccw_1 { --scalex:-100%; --rotation:0; left:83%; top:17%; }
             #ccw_2 { --scalex:-100%; --rotation:180deg; left:17%; top:83%; }
 
-            #colorPicker { position:absolute; top:50%; left:50%; width:42cqh; height:42cqh; cursor:pointer;
+            #colorPicker { pointer-events:auto; position:absolute; top:50%; left:50%; width:42cqh; height:42cqh; cursor:pointer;
                 appearance:none; -webkit-appearance:none; -webkit-tap-highlight-color:transparent; padding:0; border:solid 3cqh black; border-radius:100%; background-color:white; 
                 transform:translate(-50%, -50%) scale(100%); transition:padding 0.5s ease, transform 0.5s ease; }
             #colorPicker:active { transform:translate(-50%, -50%) scale(90%); padding:2cqh; }
@@ -103,7 +107,10 @@
                 <div id="menuHolder">
                     <div class="hidden" id="menuBox">
                         <div id="pivotSelect">
-                            <img id="dollImg" src="./assets/DollHousePegManUI.png" draggable="false" oncontextmenu="return false;">
+                            <div id="dollContainer" onclick="document.getElementById('colorPicker').click();">
+                                <img class="dollImg" src="./assets/PegMan.png" draggable="false" oncontextmenu="return false;">
+                                <div class="dollImg" id="dollBack"></div>
+                            </div>
                             <input type="radio" name="pivot" id="head" value="head" oncontextmenu="return false;" checked="true">
                             <input type="radio" name="pivot" id="leftArm" value="leftArm" oncontextmenu="return false;">
                             <input type="radio" name="pivot" id="rightArm" value="rightArm" oncontextmenu="return false;">
@@ -113,9 +120,8 @@
                             <img id="reset" src="./assets/reset.png" onclick="pivotReset(event)" draggable="false" oncontextmenu="return false;">
                         </div>
                         <div id="rightHolder">
-                            <div id="arrowBackground"></div>
                             <div id="arrowHolder">
-                                <input id="colorPicker" type="color" value="#ff00ff">
+                                <input id="colorPicker" type="color" tabindex="-1" value="#ff00ff">
                                 <img class="arrowButton" id="up" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
                                 <img class="arrowButton" id="down" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
                                 <img class="arrowButton" id="right" src="./assets/arrowaway.png" draggable="false" oncontextmenu="return false;">
@@ -131,7 +137,7 @@
                 <div class="mobileOnly" id="touchButtonHolder">
                     <div id="e" class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>PLACE</h1></div>
                     <div id="q" class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>POSE</h1></div>
-                    <div id=" " class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>UP</h1></div>
+                    <div id=" " class="mobileOnly touchButton" ontouchstart="simKey(event)" ontouchend="stopSimKey(event)" ontouchcancel="stopSimKey(event)"><h1>CLIMB</h1></div>
                 </div>
             </div>
             <div class="mobileOnly smallscreenOnly fullscreenButton" oncontextmenu="return false;" onclick="fullscreen(event)">
@@ -146,7 +152,13 @@
     <script>
         const rules = [...document.styleSheets[0].cssRules];
         const mobileOnlyRule = rules.find(r => r.selectorText == ".mobileOnly");
-        if(window.innerWidth <= 1024) //assume mobile, start mobileOnly class as visible by default
+        let mobile = false;
+        if(navigator.userAgentData)
+            mobile = navigator.userAgentData.mobile;
+        else
+            mobile = /Mobi|Android/i.test(navigator.userAgent);
+        
+        if(mobile)
             mobileOnlyRule.style.display = "flex";
 
         window.addEventListener("keydown", (event) => { mobileOnlyRule.style.display = "none"; });
@@ -237,6 +249,8 @@
             document.dispatchEvent(new CustomEvent("colorChange", {
                 detail: { color: event.target.value }
             }));
+            const dollBackRule = rules.find(r => r.selectorText == "#dollBack");
+            dollBackRule.style.backgroundColor = event.target.value;
         });
     </script>
 </html>

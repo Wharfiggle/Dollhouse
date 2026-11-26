@@ -46,12 +46,12 @@ function loadGame()
     const fov = 70;
     const aspect = w / h;
     const near = 0.1;
-    const far = 100;
+    const far = 50;
     const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
     camera.position.set(0, 0, 10);
     camera.lookAt(0, 0, 0);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("black");
+    scene.background = new THREE.Color("blue");
     camera.updateMatrixWorld();
 
     //set up lighting

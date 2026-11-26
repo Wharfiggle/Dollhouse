@@ -176,6 +176,24 @@ export class handler
         gameObj.isLocal = isLocal;
         getArr(isLocal).push(gameObj);
     }
+    lockPointer()
+    {
+        if(document.pointerLockElement)
+            return;
+
+        const mobileOnlyRule = [...document.styleSheets[0].cssRules].find(r => r.selectorText == ".mobileOnly");
+        if(mobileOnlyRule.style.display == "none")
+            this.ui.canvas.requestPointerLock();
+    }
+    unlockPointer()
+    {
+        if(!document.pointerLockElement)
+            return;
+
+        const mobileOnlyRule = [...document.styleSheets[0].cssRules].find(r => r.selectorText == ".mobileOnly");
+        if(mobileOnlyRule.style.display == "none")
+            document.exitPointerLock();
+    }
 }
 
 
