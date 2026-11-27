@@ -74,11 +74,65 @@ function loadGame()
 
 
     //game objects
-    handler.newGameObject(Dollhouse.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
+    const activePlayer = handler.newGameObject(Dollhouse.player, { id: 0, startPos: new THREE.Vector3(0, 0, 10), isLocal: true });
     multiplayer.setControlledPlayer(0);
     handler.newGameObject(GameObject.basicCollider, { height: 2, radius: 1, bottomPos: new THREE.Vector3(0, 4, 0) });
     
     handler.newGameObject(Dollhouse.ground);
+
+
+    //stress test
+    /*let stressTest = true;
+    addEventListener("keydown", (event) => {
+        if(event.key == "1")
+            stressTest = !stressTest;
+    });
+    setInterval(() => {
+        if(!stressTest)
+            return;
+        activePlayer.test ??= {
+            x: 0,
+            y: 0,
+            step: 0,
+            stepLength: 1,
+            turns: 0,
+            dir: 0,
+            dx: [1, 0, -1, 0],
+            dy: [0, 1, 0, -1],
+            i: 0,
+            loops: Math.pow(GameObject.MAX_METERS * 2, 2),
+            cellSize: 0.6,
+            mm: GameObject.MAX_METERS,
+        };
+        const t = activePlayer.test;
+        if(t.x * t.cellSize >= -t.mm && t.x * t.cellSize <= t.mm && t.y * t.cellSize >= -t.mm && t.y * t.cellSize <= t.mm)
+        {
+            t.i++;
+            handler.newGameObject(Dollhouse.placedDoll, {
+                pos: new THREE.Vector3(t.x * t.cellSize, t.y * t.cellSize, 0),
+                yaw: 0,
+                pose: activePlayer.pose,
+                color: activePlayer.color,
+                isLocal: true 
+            });
+        }
+        t.x += t.dx[t.dir];
+        t.y += t.dy[t.dir];
+        t.step++;
+        if(t.step == t.stepLength)
+        {
+            t.step = 0;
+            t.dir = (t.dir + 1) % 4;
+            t.turns++;
+            if(t.turns % 2 == 0)
+                t.stepLength++;
+        }
+    }, 100);
+    */
+
+    //FPS counter
+    //let fpsTimer = 0;
+    //let fpsCount = -1;
 
 
     //tick
@@ -91,7 +145,19 @@ function loadGame()
         lastTime = t;
         let time = t / 1000;
 
+
+        //FPS counter
+        /*fpsTimer += dt;
+        fpsCount++;
+        if(fpsTimer >= 1)
+        {
+            console.log("FPS: ", fpsCount);
+            fpsCount = -1;
+            fpsTimer = 0;
+        }
+        */
         //console.log("FPS: " + Math.round(1 / dt));
+
 
         if(dpr != window.devicePixelRatio)
             handleWindowResize();
